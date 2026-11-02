@@ -1,0 +1,14 @@
+test-output/
+dist/
+.tools/
+**/bin/
+**/obj/
+.build/
+.vs/
+*.user
+*.suo
+*.log
+**/todos.json*
+**/display.json*
+.env
+.env.*
