@@ -1,14 +1,9 @@
-test-output/
-dist/
 .tools/
+.build/
+dist/
+artifacts/
 **/bin/
 **/obj/
-.build/
 .vs/
 *.user
-*.suo
 *.log
-**/todos.json*
-**/display.json*
-.env
-.env.*

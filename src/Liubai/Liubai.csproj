@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.22000.0</TargetPlatformMinVersion>
+    <AssemblyName>Liubai</AssemblyName>
+    <RootNamespace>Liubai</RootNamespace>
+    <Version>0.1.0</Version>
+    <Platforms>x64</Platforms>
+    <PlatformTarget>x64</PlatformTarget>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <UseWinUI>true</UseWinUI>
+    <WindowsPackageType>None</WindowsPackageType>
+    <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+    <SelfContained>true</SelfContained>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\Liubai.ico</ApplicationIcon>
+    <PublishTrimmed>false</PublishTrimmed>
+  </PropertyGroup>
+  <ItemGroup>
+    <Content Include="Assets\Liubai.ico" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <PackageReference Include="Microsoft.WindowsAppSDK.WinUI" Version="2.6.4" />
+    <PackageReference Include="Microsoft.WindowsAppSDK.Runtime" Version="2.6.4" />
+    <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.28000.2957" />
+  </ItemGroup>
+  <!-- CLI publishing does not currently carry the unpackaged MRT/XBF payload automatically. -->
+  <Target Name="GenerateUnpackagedXamlResources" AfterTargets="Build"
+          DependsOnTargets="_GetSdkToolPaths;GetMrtPackagingOutputs;_GetDefaultResourceLanguage;_GenerateProjectPriFile">
+    <Copy SourceFiles="$(ProjectPriFullPath)" DestinationFiles="$(TargetDir)resources.pri" SkipUnchangedFiles="true" />
+  </Target>
+  <Target Name="PublishUnpackagedXamlResources" AfterTargets="ComputeFilesToPublish"
+          DependsOnTargets="GenerateUnpackagedXamlResources">
+    <ItemGroup>
+      <ResolvedFileToPublish Include="$(TargetDir)resources.pri" RelativePath="resources.pri" CopyToPublishDirectory="PreserveNewest" />
+      <ResolvedFileToPublish Include="$(TargetDir)App.xbf" RelativePath="App.xbf" CopyToPublishDirectory="PreserveNewest" />
+    </ItemGroup>
+  </Target>
+</Project>
