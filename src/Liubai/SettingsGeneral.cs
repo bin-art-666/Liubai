@@ -7,6 +7,7 @@ namespace Liubai;
 internal sealed partial class SettingsWindow
 {
     ToggleSwitch allDisplays = null!, followPaused = null!, startup = null!;
+    TextBlock startupInfo = null!;
     ComboBox personalPresets = null!;
     TextBox presetName = null!;
     Button usePreset = null!, deletePreset = null!;
@@ -17,8 +18,10 @@ internal sealed partial class SettingsWindow
         var panel = new StackPanel { Spacing = 14 };
         allDisplays = new ToggleSwitch { Header = "显示范围", OnContent = "所有屏幕", OffContent = "仅主屏" };
         followPaused = new ToggleSwitch { Header = "暂停颜色跟随", OnContent = "保持当前外观", OffContent = "自动跟随窗口" };
-        startup = new ToggleSwitch { Header = "开机启动", OnContent = "登录 Windows 后启动", OffContent = "手动启动" };
+        startup = new ToggleSwitch { Header = "开机启动", OnContent = "登录后延迟 15 秒启动", OffContent = "手动启动" };
         panel.Children.Add(allDisplays); panel.Children.Add(followPaused); panel.Children.Add(startup);
+        startupInfo = Hint(StartupService.RegistrationWarning ?? "通过当前用户的登录任务启动，异常退出会重试；无需管理员权限。");
+        panel.Children.Add(startupInfo);
         panel.Children.Add(Hint("多屏分别跟随各自最上层窗口，共用高度和外观设置。暂停时保留当前颜色，恢复后重新识别。"));
         var import = new Button { Content = "导入配置", HorizontalAlignment = HorizontalAlignment.Stretch };
         var export = new Button { Content = "导出配置", HorizontalAlignment = HorizontalAlignment.Stretch };
@@ -30,7 +33,12 @@ internal sealed partial class SettingsWindow
         startup.Toggled += (_, _) =>
         {
             if (syncing || !interactive) return;
-            try { StartupService.SetEnabled(startup.IsOn); status.Text = startup.IsOn ? "已开启开机启动" : "已关闭开机启动"; }
+            try
+            {
+                StartupService.SetEnabled(startup.IsOn);
+                status.Text = startup.IsOn ? "已开启开机启动，登录后延迟 15 秒启动" : "已关闭开机启动";
+                startupInfo.Text = "通过当前用户的登录任务启动，异常退出会重试；无需管理员权限。";
+            }
             catch
             {
                 syncing = true; try { startup.IsOn = StartupService.Enabled; } catch { startup.IsOn = false; } finally { syncing = false; }

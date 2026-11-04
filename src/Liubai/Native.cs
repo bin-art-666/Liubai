@@ -82,6 +82,24 @@ internal static class Native
     internal static bool IsPanelWindow(IntPtr panel, IntPtr candidate) => candidate == panel
         || (candidate != IntPtr.Zero && (IsChild(panel, candidate) || GetAncestor(candidate, 3) == panel)); // GA_ROOTOWNER
 
+    internal static void DragWindow(IntPtr window)
+    {
+        ReleaseCapture();
+        SendMessage(window, 0x00A1, new IntPtr(2), IntPtr.Zero); // WM_NCLBUTTONDOWN, HTCAPTION
+    }
+
+    internal static void RestoreResizeFrame(IntPtr window)
+    {
+        uint style = unchecked((uint)GetWindowLongPtr(window, -16).ToInt64());
+        SetWindowLongPtr(window, -16, new IntPtr(unchecked((int)((style & ~0x80000000u) | 0x00040000u))));
+        int policy = 2;
+        DwmSetWindowAttribute(window, 2, ref policy, sizeof(int));
+        SetWindowPos(window, IntPtr.Zero, 0, 0, 0, 0, 0x0037);
+    }
+
+    [DllImport("user32.dll")] static extern bool ReleaseCapture();
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern IntPtr SendMessage(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
+
     internal static void RemoveWindowFrame(IntPtr window)
     {
         // Hiding a WinUI caption alone can leave the legacy non-client edge visible.

@@ -93,7 +93,7 @@ internal sealed partial class BarManager
         refreshTimer.Stop(); refreshTimer.Start();
     }
     internal void HideOtherPanels(BarWindow owner)
-    { foreach (var bar in bars.Values) if (bar != owner) bar.HidePanels(); }
+    { foreach (var bar in bars.Values) if (bar != owner) bar.HidePanels(false); }
     internal PlannerWindow GetPlanner(DesktopMonitor display) => plannerPanel ??= new PlannerWindow(App.Planner, display);
     internal bool RequestReminder(Guid id)
     {
@@ -120,6 +120,7 @@ internal sealed partial class BarManager
         if (plannerPanel != null && !await plannerPanel.FlushAsync()) { quitting = false; return; }
         if (App.Reminders != null) await App.Reminders.Stop();
         await ScreenshotService.Flush();
+        await App.FlushStation();
         refreshTimer.Stop(); plannerPanel?.Destroy();
         foreach (var bar in bars.Values.ToArray()) bar.Shutdown();
         bars.Clear(); WindowsCompositionQueue.ExitApplication();

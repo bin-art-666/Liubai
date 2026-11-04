@@ -13,17 +13,19 @@ internal abstract class PanelWindow : Window
     OutsideClickWatcher? outsideClicks;
     internal bool IsOpen { get; private set; }
     internal bool ModalActive => modalDepth > 0;
+    protected virtual bool DismissOnOutside => true;
+    protected virtual bool Frameless => true;
 
     protected PanelWindow()
     {
         Activated += (_, args) =>
         {
             long version = ++activationVersion;
-            if (args.WindowActivationState != WindowActivationState.Deactivated || !IsOpen || modalDepth > 0) return;
+            if (args.WindowActivationState != WindowActivationState.Deactivated || !IsOpen || modalDepth > 0 || !DismissOnOutside) return;
             // Let XAML finish activating a dropdown/owned popup before deciding focus left the panel.
             DispatcherQueue.TryEnqueue(DispatcherQueuePriority.Low, () =>
             {
-                if (closed || !IsOpen || version != activationVersion || modalDepth > 0) return;
+                if (closed || !IsOpen || version != activationVersion || modalDepth > 0 || !DismissOnOutside) return;
                 var handle = WinRT.Interop.WindowNative.GetWindowHandle(this);
                 if (!Native.PanelHasFocus(handle)) Hide();
             });
@@ -44,15 +46,18 @@ internal abstract class PanelWindow : Window
         AppWindow.Hide();
     }
 
-    protected void ShowPanel()
+    protected void ShowPanel(bool activate = true)
     {
         activationVersion++;
         IsOpen = true;
-        Activate();
-        Native.RemoveWindowFrame(WinRT.Interop.WindowNative.GetWindowHandle(this));
+        // Activate alone is not a reliable way to re-show an AppWindow that was
+        // explicitly hidden, especially after a non-activating drag-hover open.
+        AppWindow.Show(false);
+        if (activate) Activate();
+        if (Frameless) Native.RemoveWindowFrame(WinRT.Interop.WindowNative.GetWindowHandle(this));
         outsideClicks?.Dispose();
         outsideClicks = new OutsideClickWatcher(WinRT.Interop.WindowNative.GetWindowHandle(this), DispatcherQueue,
-            () => { if (modalDepth == 0) Hide(); });
+            () => { if (modalDepth == 0 && DismissOnOutside) Hide(); });
     }
 
     internal void Hide()

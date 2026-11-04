@@ -9,6 +9,9 @@ public partial class App : Application
     BarWindow? verificationBar;
     internal static string DataDirectory { get; private set; } = "";
     static PlannerStore? planner;
+    static StationStore? station;
+    internal static StationStore Station => station ??= new StationStore(Path.Combine(DataDirectory, "station.json"));
+    internal static Task FlushStation() => station?.Flush() ?? Task.CompletedTask;
     internal static PlannerStore Planner => planner ??= new PlannerStore(Path.Combine(DataDirectory, "planner.json"));
     static ScreenshotOptionsStore? screenshots;
     internal static ScreenshotOptionsStore Screenshots => screenshots ??= new(Path.Combine(DataDirectory, "screenshot.json"));
@@ -21,6 +24,7 @@ public partial class App : Application
         InitializeComponent();
         UnhandledException += (_, e) =>
         {
+            if (Environment.GetCommandLineArgs().Contains("--startup")) StartupService.Log("failed", e.Exception);
             try
             {
                 Directory.CreateDirectory(DataDirectory);
@@ -37,11 +41,13 @@ public partial class App : Application
         DataDirectory = index >= 0 && index + 1 < arguments.Length
             ? Path.GetFullPath(arguments[index + 1])
             : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Liubai.Bar");
+        bool startupLaunch = arguments.Contains("--startup");
+        if (startupLaunch) StartupService.Log("launch");
         instance = new Mutex(true, "Local\\Liubai.GlassBar", out bool first);
-        if (!first) { Exit(); return; }
+        if (!first) { if (startupLaunch) StartupService.Log("already-running"); Exit(); return; }
         if (index < 0 && !arguments.Any(a => a.StartsWith("--verify-", StringComparison.Ordinal))) StartupService.RefreshExistingPath();
         var preferences = new AppearanceStore(Path.Combine(DataDirectory, "appearance.json"));
-        if (arguments.Contains("--verify-expanded") || arguments.Contains("--verify-shell") || arguments.Contains("--verify-planner") || arguments.Contains("--verify-reminders") || arguments.Contains("--verify-screenshot") || arguments.Contains("--verify-qr"))
+        if (arguments.Contains("--verify-expanded") || arguments.Contains("--verify-shell") || arguments.Contains("--verify-planner") || arguments.Contains("--verify-reminders") || arguments.Contains("--verify-screenshot") || arguments.Contains("--verify-qr") || arguments.Contains("--verify-station"))
         {
             verificationBar = new BarWindow(preferences);
             verificationBar.Start(arguments.Contains("--show-settings"));
@@ -50,6 +56,7 @@ public partial class App : Application
         {
             manager = new BarManager(preferences, Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread());
             manager.Start(arguments.Contains("--show-settings"));
+            if (startupLaunch) StartupService.Log("ready");
             if (arguments.Contains("--verify-desktop")) _ = manager.VerifyDesktop();
             else if (index < 0)
                 StartReminders(Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread(), id => manager.RequestReminder(id));
