@@ -59,6 +59,7 @@ internal sealed partial class BarManager
     internal void EnvironmentChanged(uint message, long parameter)
     {
         if (quitting) return;
+        if (message is 0x007E or 0x02E0) QrSelectionWindow.CancelActive();
         long now = Environment.TickCount64;
         if (environmentEvents.TryGetValue((message, parameter), out long previous) && now - previous < 150) return;
         if (environmentEvents.Count > 64) environmentEvents.Clear();

@@ -1,0 +1,5 @@
+ZXing.Net 0.16.11
+Copyright ZXing.Net authors, including Michael Jahn, and ZXing authors.
+https://github.com/micjahn/ZXing.Net
+Licensed under the Apache License, Version 2.0. See ZXingLicense.txt.
+Liubai uses the unmodified NuGet library for local QR-code decoding.

@@ -41,7 +41,7 @@ public partial class App : Application
         if (!first) { Exit(); return; }
         if (index < 0 && !arguments.Any(a => a.StartsWith("--verify-", StringComparison.Ordinal))) StartupService.RefreshExistingPath();
         var preferences = new AppearanceStore(Path.Combine(DataDirectory, "appearance.json"));
-        if (arguments.Contains("--verify-expanded") || arguments.Contains("--verify-shell") || arguments.Contains("--verify-planner") || arguments.Contains("--verify-reminders") || arguments.Contains("--verify-screenshot"))
+        if (arguments.Contains("--verify-expanded") || arguments.Contains("--verify-shell") || arguments.Contains("--verify-planner") || arguments.Contains("--verify-reminders") || arguments.Contains("--verify-screenshot") || arguments.Contains("--verify-qr"))
         {
             verificationBar = new BarWindow(preferences);
             verificationBar.Start(arguments.Contains("--show-settings"));

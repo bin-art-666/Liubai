@@ -14,7 +14,7 @@ public sealed partial class BarWindow : Window
     readonly BarManager? manager;
     internal DesktopMonitor Display { get; private set; }
     readonly Border surface;
-    readonly Button settings, shelf, todo, quickNote, screenshot;
+    readonly Button settings, shelf, todo, quickNote, screenshot, qrScan;
     readonly ToolTip screenshotTip;
     readonly Microsoft.UI.Dispatching.DispatcherQueueTimer screenshotTipTimer;
     readonly StackPanel actions;
@@ -63,6 +63,10 @@ public sealed partial class BarWindow : Window
         screenshotTipTimer = DispatcherQueue.CreateTimer(); screenshotTipTimer.IsRepeating = false;
         screenshotTipTimer.Interval = TimeSpan.FromSeconds(3);
         screenshotTipTimer.Tick += (_, _) => { screenshotTip.IsOpen = false; screenshotTip.Content = "一键截取整个屏幕"; };
+        qrScan = CreateToolbarButton(null, "扫码");
+        qrScan.Content = CreateVectorIcon(qrScan,
+            "M 8 3 L 3 3 L 3 8 M 16 3 L 21 3 L 21 8 M 3 16 L 3 21 L 8 21 M 21 16 L 21 21 L 16 21 "
+            + "M 7 7 L 10 7 L 10 10 L 7 10 Z M 14 7 L 17 7 L 17 10 L 14 10 Z M 7 14 L 10 14 L 10 17 L 7 17 Z M 14 14 L 17 14 L 17 17 M 14 17 L 14 19 M 19 12 L 19 14", "1.4");
         todo = CreateToolbarButton(null, "待办");
         todo.Content = CreateVectorIcon(todo,
             "M 8 5 L 6 5 C 4.9 5 4 5.9 4 7 L 4 19 C 4 20.1 4.9 21 6 21 L 18 21 C 19.1 21 20 20.1 20 19 L 20 7 C 20 5.9 19.1 5 18 5 L 16 5 "
@@ -80,6 +84,7 @@ public sealed partial class BarWindow : Window
             HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center,
         };
         actions.Children.Add(screenshot);
+        actions.Children.Add(qrScan);
         actions.Children.Add(todo);
         actions.Children.Add(quickNote);
         actions.Children.Add(shelf);
@@ -93,6 +98,7 @@ public sealed partial class BarWindow : Window
         todo.Click += (_, _) => OpenPlanner(PlannerPage.Tasks);
         quickNote.Click += (_, _) => OpenPlanner(PlannerPage.Notes);
         screenshot.Click += async (_, _) => await TakeScreenshot();
+        qrScan.Click += async (_, _) => await ScanQr();
         surface.ActualThemeChanged += (_, _) =>
         {
             if (!transition.Active && !expandedSnapshot.UsesSolid(preferences.Expanded)) UpdateSurface();
@@ -185,6 +191,7 @@ public sealed partial class BarWindow : Window
         else if (Environment.GetCommandLineArgs().Contains("--verify-planner")) _ = VerifyPlanner();
         else if (Environment.GetCommandLineArgs().Contains("--verify-reminders")) _ = VerifyReminders();
         else if (Environment.GetCommandLineArgs().Contains("--verify-screenshot")) _ = VerifyScreenshot();
+        else if (Environment.GetCommandLineArgs().Contains("--verify-qr")) _ = VerifyQr();
     }
 
     async void Quit()
@@ -200,7 +207,8 @@ public sealed partial class BarWindow : Window
     internal void Shutdown()
     {
         if (closing) return;
-        closing = true; screenshotTipTimer.Stop(); screenshotTip.IsOpen = false;
+        closing = true; QrSelectionWindow.CancelActive(); qrResults?.Destroy(); if (qrTip != null) qrTip.IsOpen = false;
+        screenshotTipTimer.Stop(); screenshotTip.IsOpen = false;
         transition.Cancel(); appearanceMonitor?.Dispose(); tray?.Dispose(); tray = null;
         settingsWindow?.Destroy(); if (manager == null) plannerWindow?.Destroy();
         reservation.Dispose(); SystemBackdrop = null; Close();
@@ -234,9 +242,9 @@ public sealed partial class BarWindow : Window
     internal int SampleCount => appearanceMonitor?.SampleCount ?? 0;
     internal bool TrayRegistered => tray?.IsRegistered == true;
     internal Windows.Graphics.RectInt32 BarRectangle => new(AppWindow.Position.X, AppWindow.Position.Y, AppWindow.Size.Width, AppWindow.Size.Height);
-    internal void HidePanels() { settingsWindow?.Hide(); plannerWindow?.Hide(); }
+    internal void HidePanels() { settingsWindow?.Hide(); plannerWindow?.Hide(); qrResults?.Hide(); }
     internal Task<bool> FlushPlanner() => plannerWindow?.FlushAsync() ?? Task.FromResult(true);
-    internal bool PanelModal => settingsWindow?.ModalActive == true || plannerWindow?.ModalActive == true;
+    internal bool PanelModal => QrSelectionWindow.Active || qrResults?.ModalActive == true || settingsWindow?.ModalActive == true || plannerWindow?.ModalActive == true;
     internal void RequestSettings()
     {
         if (surface.IsLoaded) OpenSettings(); else surface.Loaded += ShowSettingsOnLoad;
@@ -244,6 +252,7 @@ public sealed partial class BarWindow : Window
     internal void Recover(bool suspended)
     {
         if (closing) return;
+        QrSelectionWindow.CancelActive();
         transition.Cancel(); appearanceMonitor?.SetEnabled(false);
         if (suspended) { HidePanels(); return; }
         // A new controller reconnects to DWM after resume/theme/composition changes.
@@ -350,6 +359,7 @@ public sealed partial class BarWindow : Window
     void OpenSettings()
     {
         if (PanelModal || manager?.HasModal == true) return;
+        qrResults?.Hide();
         plannerWindow?.Hide();
         manager?.HideOtherPanels(this);
         settingsWindow ??= new SettingsWindow(preferences,
@@ -363,6 +373,7 @@ public sealed partial class BarWindow : Window
     async void OpenPlanner(PlannerPage page)
     {
         if (openingPlanner || closing || PanelModal || manager?.HasModal == true) return;
+        qrResults?.Hide();
         if (plannerWindow?.IsOpen == true && plannerWindow.Page == page && plannerWindow.DisplayDevice == Display.Device)
         { plannerWindow.Hide(); return; }
         openingPlanner = true;
@@ -384,6 +395,7 @@ public sealed partial class BarWindow : Window
         openingPlanner = true;
         try
         {
+            qrResults?.Hide();
             settingsWindow?.Hide(); manager?.HideOtherPanels(this);
             plannerWindow ??= manager?.GetPlanner(Display) ?? new PlannerWindow(App.Planner, Display);
             await plannerWindow.OpenReminder(id, Display, windowShown ? AppWindow.Position.Y + AppWindow.Size.Height : Display.Info.Work.Top);
