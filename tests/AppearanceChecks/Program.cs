@@ -117,11 +117,10 @@ try
         Check(fast.Observe(content, 2000 + timing.Content - 1) == null, "In-window content must not flicker on a single capture.");
         Check(fast.Observe(content, 2000 + timing.Content) is { IsDark: true }, "Stable in-window color must eventually update.");
         fast.Observe(new(false), 3000);
-        fast.Observe(new(false, Frame: new(0, 1, 800, 600)), 3000 + timing.Scene - 10);
-        Check(fast.Observe(new(false, Frame: new(0, 1, 800, 600)), 3000 + timing.Scene) == null,
-            "Restore geometry must settle before committing.");
-        Check(fast.Observe(new(false, Frame: new(0, 1, 800, 600)), 3000 + timing.Scene + timing.Quiet) is { IsExpanded: false },
-            "Settled geometry must commit without restarting the scene timer.");
+        Check(fast.Observe(new(false, Frame: new(0, 1, 800, 600)), 3000 + timing.Quiet - 1) == null,
+            "A single transient restore observation must still be confirmed.");
+        Check(fast.Observe(new(false, Frame: new(0, 2, 800, 601)), 3000 + timing.Quiet) is { IsExpanded: false },
+            "Confirmed exit must restore glass promptly even while the window is still moving.");
         fast.Observe(darkWindow, 4000); fast.Invalidate();
         Check(fast.Observe(darkWindow, 5000) == null, "A newer native event must invalidate a stale candidate.");
         Check(fast.Observe(new(false), 5010) == null && !fast.Current.IsExpanded,
@@ -191,8 +190,8 @@ try
     Check(ExpandedWindowPolicy.IsExpanded(secondaryWork, secondary, secondaryWork, 144, true)
         && !ExpandedWindowPolicy.IsExpanded(work, secondary, secondaryWork, 144, true), "Scene checks must honor negative coordinates and display boundaries.");
     static BandColorSample[] Band(Func<int, int, uint?> pixel) => Enumerable.Range(0, ExpandedColorPolicy.Columns)
-        .SelectMany(x => Enumerable.Range(0, ExpandedColorPolicy.Rows).Select(y => (x, color: pixel(x, y))))
-        .Where(p => p.color.HasValue).Select(p => new BandColorSample(p.x, p.color!.Value)).ToArray();
+        .SelectMany(x => Enumerable.Range(0, ExpandedColorPolicy.Rows).Select(y => (x, y, color: pixel(x, y))))
+        .Where(p => p.color.HasValue).Select(p => new BandColorSample(p.x, p.color!.Value, p.y)).ToArray();
     Check(ExpandedColorPolicy.Representative(Band((x, y) => 0x223344)) == 0x223344, "A full-width solid background must remain detectable.");
     Check(ExpandedColorPolicy.Representative(Band((x, y) => x < 4 ? 0x3366CCu : null)) == null,
         "A small visible fragment must never color the full bar.");
@@ -204,6 +203,13 @@ try
         "Sparse foreground text must not override a distributed dominant background.");
     Check(ExpandedColorPolicy.Representative(Band((x, y) => x < 8 ? 0xFFFFFFu : 0x000000u)) == null,
         "A split background without a broad consensus must not pick an arbitrary side.");
+    Check(ExpandedColorPolicy.Representative(Band((x, y) => y < 3 && x >= 4 ? 0x2B2B2Bu : 0x0C0C0Cu)) is { } terminalColor
+        && WindowColorAnalysis.Brightness(terminalColor) < .2,
+        "Stacked terminal tabs and content must yield a verified dark layer despite lacking an overall 65 percent majority.");
+    Check(ExpandedColorPolicy.Representative(Band((x, y) => y == 0 ? 0xFF0000u : (uint)(x * 0x0F0F0F))) == null,
+        "A single broad row must not establish a window background.");
+    Check(ExpandedColorPolicy.Representative(Band((x, y) => x < 4 ? (y < 3 ? 0x2B2B2Bu : 0x0C0C0Cu) : null)) == null,
+        "Stacked colors in a narrow exposed fragment must remain rejected.");
     var confidence = new ExpandedAppearanceTracker();
     confidence.Observe(new(true, 101, 0x223344), 0); confidence.Observe(new(true, 101, 0x223344), 300);
     Check(confidence.Current.HasColor && confidence.Current.UsesSolid(new(true, ExpandedMode.FollowWindow)), "A verified broad color must enable followed appearance.");

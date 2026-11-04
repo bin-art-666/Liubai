@@ -108,10 +108,12 @@ internal sealed class ExpandedAppearanceTracker
         if (candidate is { } previous && Same(previous, next))
         {
             var timing = AppearanceTiming.For(Speed);
-            int wait = next.IsExpanded != Current.IsExpanded ? timing.Scene
+            int wait = !next.IsExpanded ? timing.Quiet : next.IsExpanded != Current.IsExpanded ? timing.Scene
                 : next.Window != Current.Window ? timing.Source : timing.Content;
             // Geometry settling and color confirmation run concurrently, never serially.
-            if (now - candidateSince < wait || now - lastMotion < timing.Quiet) return null;
+            // Once geometry proves the window has left the dedicated scene,
+            // restore glass without waiting for the whole resize animation to stop.
+            if (now - candidateSince < wait || next.IsExpanded && now - lastMotion < timing.Quiet) return null;
             Current = next; candidate = null; return Current;
         }
         candidate = next; candidateSince = now;

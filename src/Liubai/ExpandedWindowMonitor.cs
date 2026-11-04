@@ -9,11 +9,11 @@ internal sealed class ExpandedWindowMonitor : IDisposable
 {
     readonly DispatcherQueueTimer timer;
     readonly WindowColorSampler sampler = new();
+    readonly Func<int, DesktopMonitor, bool, WindowObservation> read;
     readonly ExpandedAppearanceTracker tracker = new();
     readonly Func<int> barHeight;
     readonly Action<ExpandedSnapshot> changed;
     readonly DispatcherQueue dispatcher;
-    readonly Func<bool> animating;
     readonly Func<DesktopMonitor> display;
     readonly Func<bool> needsColor;
     ForegroundActivity? activity;
@@ -26,12 +26,13 @@ internal sealed class ExpandedWindowMonitor : IDisposable
     internal bool Enabled => enabled;
     internal int SampleCount { get; private set; }
     internal ExpandedWindowMonitor(DispatcherQueue dispatcher, Func<int> barHeight, Action<ExpandedSnapshot> changed,
-        Func<bool> animating, Func<DesktopMonitor>? display = null, Func<bool>? needsColor = null)
+        Func<DesktopMonitor>? display = null, Func<bool>? needsColor = null,
+        Func<int, DesktopMonitor, bool, WindowObservation>? read = null)
     {
         this.dispatcher = dispatcher; this.barHeight = barHeight; this.changed = changed;
-        this.animating = animating;
         this.display = display ?? (() => Native.Monitors().First(m => m.Primary));
         this.needsColor = needsColor ?? (() => true);
+        this.read = read ?? ((height, monitor, color) => sampler.Read(height, monitor, color));
         timer = dispatcher.CreateTimer(); timer.Interval = TimeSpan.FromMilliseconds(250);
         timer.Tick += (_, _) => _ = Tick();
     }
@@ -51,14 +52,16 @@ internal sealed class ExpandedWindowMonitor : IDisposable
         if (!enabled || disposed) return;
         // Invalidating observations must not tear down a frame already fading out.
         // The renderer replaces that frame only when a new appearance is committed.
-        generation++; tracker.Invalidate();
+        // Supersede an in-flight read, but let consecutive matching observations
+        // retain their confirmation time through a stream of geometry events.
+        generation++;
         fastUntil = Environment.TickCount64 + 1000; stableSince = Environment.TickCount64;
         timer.Interval = TimeSpan.FromMilliseconds(AppearanceTiming.For(tracker.Speed).Poll);
         if (busy) wakePending = true; else _ = Tick(force: true);
     }
     async Task Tick(bool force = false)
     {
-        if (busy || disposed || !enabled || animating() && !force && !tracker.Pending) return;
+        if (busy || disposed || !enabled) return;
         busy = true;
         int version = generation;
         try
@@ -66,7 +69,7 @@ internal sealed class ExpandedWindowMonitor : IDisposable
             int height = barHeight();
             var monitor = display();
             bool sampleColor = needsColor();
-            var observation = await Task.Run(() => sampler.Read(height, monitor, sampleColor));
+            var observation = await Task.Run(() => read(height, monitor, sampleColor));
             SampleCount++;
             if (disposed || !enabled || version != generation) return;
             long now = Environment.TickCount64;
@@ -77,7 +80,7 @@ internal sealed class ExpandedWindowMonitor : IDisposable
             previous = observation;
             if (tracker.Observe(observation, now) is { } snapshot) changed(snapshot);
             int interval = tracker.Pending || now < fastUntil ? AppearanceTiming.For(tracker.Speed).Poll
-                : activity?.Available == true && now - stableSince >= 3000 ? (observation.IsExpanded ? 600 : 1000) : 250;
+                : activity?.Available == true && now - stableSince >= 3000 ? (observation.IsExpanded ? 250 : 1000) : 250;
             timer.Interval = TimeSpan.FromMilliseconds(interval);
         }
         catch { /* Keep the last stable appearance when capture is unavailable. */ }
@@ -189,7 +192,7 @@ internal sealed class WindowColorSampler
                     var point = new Native.Point { X = left + x * (right - left) / width, Y = top + y * (bottom - top) / height };
                     if (Native.GetAncestor(WindowFromPoint(point), 2) != target) continue;
                     int i = (y * width + x) * 4;
-                    pixels.Add(new((x - 3) / 6, ((uint)data[i + 2] << 16) | ((uint)data[i + 1] << 8) | data[i]));
+                    pixels.Add(new((x - 3) / 6, ((uint)data[i + 2] << 16) | ((uint)data[i + 1] << 8) | data[i], (y - 1) / 3));
                 }
             return ExpandedColorPolicy.Representative(pixels);
         }

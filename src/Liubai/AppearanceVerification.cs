@@ -68,6 +68,16 @@ public sealed partial class BarWindow
             if (!withoutCapture.IsExpanded || withoutCapture.Color != null)
                 throw new InvalidOperationException("Custom mode did not separate the scene decision from color capture.");
             checks.Add(new { partialOcclusion = "PASS", floatingWindow = "PASS", unknownColorFallback = "PASS", customWithoutCapture = "PASS" });
+            var terminalSurface = new Grid { Background = new SolidColorBrush(Color.FromArgb(255, 12, 12, 12)) };
+            terminalSurface.Children.Add(new Border { Height = 26, VerticalAlignment = VerticalAlignment.Top,
+                Background = new SolidColorBrush(Color.FromArgb(255, 43, 43, 43)) });
+            probe.Content = terminalSurface;
+            await Task.Delay(350);
+            var terminalSample = sampler.ReadTarget(probeHandle, AppWindow.Size.Height);
+            if (!terminalSample.IsExpanded || terminalSample.Color is not { } terminalColor || WindowColorAnalysis.Brightness(terminalColor) >= .2)
+                throw new InvalidOperationException($"Layered dark title bar did not yield a dark background: {terminalSample}.");
+            checks.Add(new { layeredDarkTitleBar = "PASS", captured = $"#{terminalColor:X6}" });
+            probe.Content = new Grid { Background = background };
             foreach (uint rgb in new uint[] { 0x141414, 0xFAFAFA, 0x2E6594 })
             {
                 background.Color = Color.FromArgb(255, (byte)(rgb >> 16), (byte)(rgb >> 8), (byte)rgb);
@@ -227,6 +237,37 @@ public sealed partial class BarWindow
                     source = $"#{restoreCase.color:X6}", warmMaterial = "PASS", notificationContinuity = "PASS", sampledFrames = frames.Count,
                     elapsedMs = restoreClock.ElapsedMilliseconds });
             }
+            // Exercise the real monitor under repeated wake notifications. The
+            // explicit reader allows our in-process probe through the normal
+            // production exclusion of Liubai's own windows.
+            probe.AppWindow.SetPresenter(AppWindowPresenterKind.FullScreen);
+            Native.KeepOnTop(probeHandle); Native.KeepOnTop(handle);
+            await Task.Delay(200);
+            var latencyClock = new System.Diagnostics.Stopwatch();
+            long exitMs = -1;
+            using var restoreMonitor = new ExpandedWindowMonitor(DispatcherQueue, () => AppWindow.Size.Height,
+                snapshot =>
+                {
+                    expandedSnapshot = snapshot; RenderAppearance(true);
+                    if (!snapshot.IsExpanded && latencyClock.IsRunning) exitMs = latencyClock.ElapsedMilliseconds;
+                }, () => Display, () => true, (height, display, color) => sampler.ReadTarget(probeHandle, height, display, color));
+            restoreMonitor.SetSpeed(AppearanceSpeed.Balanced);
+            restoreMonitor.SetEnabled(true);
+            await Task.Delay(650);
+            if (!restoreMonitor.Current.IsExpanded) throw new InvalidOperationException("Restore latency probe did not enter fullscreen.");
+            latencyClock.Start();
+            probe.AppWindow.SetPresenter(AppWindowPresenterKind.Overlapped);
+            ((OverlappedPresenter)probe.AppWindow.Presenter).Restore();
+            probe.AppWindow.MoveAndResize(new RectInt32(monitor.Monitor.Left + 120, monitor.Work.Top + 120, 600, 400));
+            while (latencyClock.ElapsedMilliseconds < 900 && (exitMs < 0 || transition.Active))
+            {
+                restoreMonitor.Refresh();
+                await Task.Delay(15);
+            }
+            if (exitMs < 0 || exitMs > 300 || transition.Active)
+                throw new InvalidOperationException($"Restore was delayed by repeated events: detection={exitMs}ms, total={latencyClock.ElapsedMilliseconds}ms.");
+            checks.Add(new { monitorRestoreLatency = "PASS", repeatedEvents = "PASS", detectionMs = exitMs,
+                completedMs = latencyClock.ElapsedMilliseconds });
         }
         catch (Exception ex) { result = "FAIL"; error = ex.ToString(); }
         finally

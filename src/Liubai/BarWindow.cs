@@ -121,7 +121,7 @@ public sealed partial class BarWindow : Window
         UpdateTray();
         appearanceMonitor = new ExpandedWindowMonitor(DispatcherQueue, () => windowShown ? AppWindow.Size.Height : 0,
             snapshot => { expandedSnapshot = snapshot; RenderAppearance(true); UpdateVisibility(); },
-            () => transition.Active, () => Display, () => preferences.Expanded.Mode != ExpandedMode.Custom);
+            () => Display, () => preferences.Expanded.Mode != ExpandedMode.Custom);
         appearanceMonitor.SetSpeed(preferences.Expanded.Speed);
         appearanceMonitor.SetEnabled(preferences.Expanded.Enabled && !preferences.FollowPaused && manager?.Suspended != true);
         if (showSettings)
