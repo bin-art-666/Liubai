@@ -39,8 +39,12 @@ public sealed partial class BarWindow
                     throw new InvalidOperationException($"Unexpected solid background, expected #{expected:X6}.");
                 if (((FontIcon)settings.Content).Foreground is not SolidColorBrush ink || Rgb(ink.Color) != (white ? 0xFFFFFFu : 0))
                     throw new InvalidOperationException("Icon contrast was not applied.");
-                if (((FontIcon)shelf.Content).Foreground is not SolidColorBrush shelfInk || Rgb(shelfInk.Color) != Rgb(ink.Color))
-                    throw new InvalidOperationException("Shelf and settings icons did not share the same contrast color.");
+                foreach (var button in new[] { screenshot, todo, quickNote, shelf })
+                {
+                    var outline = (Microsoft.UI.Xaml.Shapes.Path)((Canvas)((Viewbox)button.Content).Child).Children[0];
+                    if (outline.Stroke is not SolidColorBrush iconInk || Rgb(iconInk.Color) != Rgb(ink.Color))
+                        throw new InvalidOperationException("Toolbar icons did not share the settings contrast color.");
+                }
             }
             var displayInfo = Native.PrimaryMonitor();
             occluder = new Window { Title = "留白局部遮挡自检", Content = new Grid { Background = new SolidColorBrush(Color.FromArgb(255, 240, 30, 30)) } };

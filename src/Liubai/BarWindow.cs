@@ -14,11 +14,15 @@ public sealed partial class BarWindow : Window
     readonly BarManager? manager;
     internal DesktopMonitor Display { get; private set; }
     readonly Border surface;
-    readonly Button settings, shelf;
+    readonly Button settings, shelf, todo, quickNote, screenshot;
+    readonly ToolTip screenshotTip;
+    readonly Microsoft.UI.Dispatching.DispatcherQueueTimer screenshotTipTimer;
     readonly StackPanel actions;
     readonly BarAppearanceTransition transition;
     string? renderedAppearance;
     SettingsWindow? settingsWindow;
+    PlannerWindow? plannerWindow;
+    bool openingPlanner;
     readonly AppBarReservation reservation;
     readonly IntPtr handle;
     readonly int originalWorkTop;
@@ -49,13 +53,35 @@ public sealed partial class BarWindow : Window
         int borderColor = unchecked((int)0xFFFFFFFE);
         Native.DwmSetWindowAttribute(handle, 34, ref borderColor, sizeof(int));
 
-        shelf = CreateToolbarButton("\uE7B8", "收纳盒");
+        screenshot = CreateToolbarButton(null, "截图");
+        screenshot.Content = CreateVectorIcon(screenshot,
+            "M 4 7 L 7 7 L 9 4 L 15 4 L 17 7 L 20 7 C 21.1 7 22 7.9 22 9 L 22 18 C 22 19.1 21.1 20 20 20 L 4 20 C 2.9 20 2 19.1 2 18 L 2 9 C 2 7.9 2.9 7 4 7 Z "
+            + "M 16 13 C 16 15.2 14.2 17 12 17 C 9.8 17 8 15.2 8 13 C 8 10.8 9.8 9 12 9 C 14.2 9 16 10.8 16 13 Z", "1.4");
+        screenshotTip = new ToolTip { Content = "一键截取整个屏幕", MaxWidth = 340, PlacementTarget = screenshot,
+            Placement = Microsoft.UI.Xaml.Controls.Primitives.PlacementMode.Bottom };
+        ToolTipService.SetToolTip(screenshot, screenshotTip);
+        screenshotTipTimer = DispatcherQueue.CreateTimer(); screenshotTipTimer.IsRepeating = false;
+        screenshotTipTimer.Interval = TimeSpan.FromSeconds(3);
+        screenshotTipTimer.Tick += (_, _) => { screenshotTip.IsOpen = false; screenshotTip.Content = "一键截取整个屏幕"; };
+        todo = CreateToolbarButton(null, "待办");
+        todo.Content = CreateVectorIcon(todo,
+            "M 8 5 L 6 5 C 4.9 5 4 5.9 4 7 L 4 19 C 4 20.1 4.9 21 6 21 L 18 21 C 19.1 21 20 20.1 20 19 L 20 7 C 20 5.9 19.1 5 18 5 L 16 5 "
+            + "M 9 3 L 15 3 C 15.6 3 16 3.4 16 4 L 16 7 L 8 7 L 8 4 C 8 3.4 8.4 3 9 3 Z M 8 14 L 11 17 L 16 12", "1.4");
+        quickNote = CreateToolbarButton(null, "随手记");
+        quickNote.Content = CreateVectorIcon(quickNote,
+            "M 11 4 L 6 4 C 4.9 4 4 4.9 4 6 L 4 18 C 4 19.1 4.9 20 6 20 L 18 20 C 19.1 20 20 19.1 20 18 L 20 13 "
+            + "M 10 11 L 17 4 C 17.8 3.2 18.8 3.2 19.6 4 L 20 4.4 C 20.8 5.2 20.8 6.2 20 7 L 13 14 L 9 15 Z M 16 5 L 19 8");
+        shelf = CreateToolbarButton(null, "收纳盒");
+        shelf.Content = CreateShelfIcon(shelf);
         settings = CreateToolbarButton("\uE713", "设置");
         actions = new StackPanel
         {
             Orientation = Orientation.Horizontal, Spacing = 2, Margin = new Thickness(0, 0, 8, 0),
             HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center,
         };
+        actions.Children.Add(screenshot);
+        actions.Children.Add(todo);
+        actions.Children.Add(quickNote);
         actions.Children.Add(shelf);
         actions.Children.Add(settings);
         surface = new Border { Child = actions, BorderThickness = new Thickness(0) };
@@ -64,6 +90,9 @@ public sealed partial class BarWindow : Window
         var layers = new Grid(); layers.Children.Add(surface); layers.Children.Add(cover);
         Content = layers;
         settings.Click += (_, _) => ToggleSettings();
+        todo.Click += (_, _) => OpenPlanner(PlannerPage.Tasks);
+        quickNote.Click += (_, _) => OpenPlanner(PlannerPage.Notes);
+        screenshot.Click += async (_, _) => await TakeScreenshot();
         surface.ActualThemeChanged += (_, _) =>
         {
             if (!transition.Active && !expandedSnapshot.UsesSolid(preferences.Expanded)) UpdateSurface();
@@ -79,11 +108,11 @@ public sealed partial class BarWindow : Window
         Closed += (_, _) => { if (!closing) Quit(); };
     }
 
-    static Button CreateToolbarButton(string glyph, string name)
+    static Button CreateToolbarButton(string? glyph, string name)
     {
         var button = new Button
         {
-            Content = new FontIcon { Glyph = glyph, FontFamily = new FontFamily("Segoe Fluent Icons"), FontSize = 15 },
+            Content = glyph == null ? null : new FontIcon { Glyph = glyph, FontFamily = new FontFamily("Segoe Fluent Icons"), FontSize = 15 },
             Width = 34, Height = 28, MinWidth = 0, MinHeight = 0, Padding = new Thickness(0),
             VerticalAlignment = VerticalAlignment.Center,
             Background = new SolidColorBrush(Colors.Transparent), BorderThickness = new Thickness(0),
@@ -94,20 +123,42 @@ public sealed partial class BarWindow : Window
         return button;
     }
 
+    static Viewbox CreateShelfIcon(Button owner)
+    {
+        // The selected stacked-card design uses a 24-unit canvas. At 20 px its
+        // visible outline matches the settings glyph's approximately 15 px size.
+        const string data = "M 7 3 L 18 3 C 19.1 3 20 3.9 20 5 L 20 16 "
+            + "M 5 7 L 15 7 C 16.1 7 17 7.9 17 9 L 17 19 C 17 20.1 16.1 21 15 21 L 5 21 C 3.9 21 3 20.1 3 19 L 3 9 C 3 7.9 3.9 7 5 7 Z "
+            + "M 7 12 L 13 12 M 7 16 L 11 16";
+        return CreateVectorIcon(owner, data);
+    }
+
+    static Viewbox CreateVectorIcon(Button owner, string data, string thickness = "1.5")
+    {
+        var outline = (Microsoft.UI.Xaml.Shapes.Path)Microsoft.UI.Xaml.Markup.XamlReader.Load(
+            "<Path xmlns=\"http://schemas.microsoft.com/winfx/2006/xaml/presentation\" Data=\"" + data
+            + "\" StrokeThickness=\"" + thickness + "\" StrokeStartLineCap=\"Round\" StrokeEndLineCap=\"Round\" StrokeLineJoin=\"Round\" />");
+        outline.SetBinding(Microsoft.UI.Xaml.Shapes.Shape.StrokeProperty,
+            new Microsoft.UI.Xaml.Data.Binding { Source = owner, Path = new PropertyPath("Foreground") });
+        var canvas = new Canvas { Width = 24, Height = 24, IsHitTestVisible = false };
+        canvas.Children.Add(outline);
+        return new Viewbox { Width = 20, Height = 20, Child = canvas, IsHitTestVisible = false };
+    }
+
     void SetToolbarColors(ElementTheme theme, SolidColorBrush? ink)
     {
-        foreach (var button in new[] { shelf, settings })
+        foreach (var button in actions.Children.OfType<Button>())
         {
             button.RequestedTheme = theme;
             if (ink != null)
             {
                 button.Foreground = ink;
-                ((FontIcon)button.Content).Foreground = ink;
+                if (button.Content is IconElement icon) icon.Foreground = ink;
             }
             else
             {
                 button.ClearValue(Control.ForegroundProperty);
-                ((FontIcon)button.Content).ClearValue(IconElement.ForegroundProperty);
+                if (button.Content is IconElement icon) icon.ClearValue(IconElement.ForegroundProperty);
             }
         }
     }
@@ -131,21 +182,36 @@ public sealed partial class BarWindow : Window
         }
         if (Environment.GetCommandLineArgs().Contains("--verify-expanded")) _ = VerifyExpanded();
         else if (Environment.GetCommandLineArgs().Contains("--verify-shell")) _ = VerifyShell();
+        else if (Environment.GetCommandLineArgs().Contains("--verify-planner")) _ = VerifyPlanner();
+        else if (Environment.GetCommandLineArgs().Contains("--verify-reminders")) _ = VerifyReminders();
+        else if (Environment.GetCommandLineArgs().Contains("--verify-screenshot")) _ = VerifyScreenshot();
     }
 
-    void Quit() { if (manager != null) manager.Quit(); else { Shutdown(); WindowsCompositionQueue.ExitApplication(); } }
+    async void Quit()
+    {
+        if (manager != null) manager.Quit();
+        else if (await FlushPlanner())
+        {
+            if (App.Reminders != null) await App.Reminders.Stop();
+            await ScreenshotService.Flush();
+            Shutdown(); WindowsCompositionQueue.ExitApplication();
+        }
+    }
     internal void Shutdown()
     {
         if (closing) return;
-        closing = true; transition.Cancel(); appearanceMonitor?.Dispose(); tray?.Dispose(); tray = null;
-        settingsWindow?.Destroy(); reservation.Dispose(); SystemBackdrop = null; Close();
+        closing = true; screenshotTipTimer.Stop(); screenshotTip.IsOpen = false;
+        transition.Cancel(); appearanceMonitor?.Dispose(); tray?.Dispose(); tray = null;
+        settingsWindow?.Destroy(); if (manager == null) plannerWindow?.Destroy();
+        reservation.Dispose(); SystemBackdrop = null; Close();
     }
     void UpdateTray()
     {
         if (!Display.Primary) { tray?.Dispose(); tray = null; return; }
         tray ??= new TrayIcon(handle, DispatcherQueue, OpenSettings, ToggleBar, () => barVisible,
             () => preferences.Style, SetStyle, Quit, () => preferences.FollowPaused,
-            () => { if (manager != null) manager.TogglePause(); else { preferences.SetFollowPaused(!preferences.FollowPaused); preferences.SaveCurrent(); ApplyExpanded(); } });
+            () => { if (manager != null) manager.TogglePause(); else { preferences.SetFollowPaused(!preferences.FollowPaused); preferences.SaveCurrent(); ApplyExpanded(); } },
+            () => OpenPlanner(PlannerPage.Tasks), () => OpenPlanner(PlannerPage.Notes));
     }
     internal void UpdateDisplay(DesktopMonitor display)
     {
@@ -168,7 +234,9 @@ public sealed partial class BarWindow : Window
     internal int SampleCount => appearanceMonitor?.SampleCount ?? 0;
     internal bool TrayRegistered => tray?.IsRegistered == true;
     internal Windows.Graphics.RectInt32 BarRectangle => new(AppWindow.Position.X, AppWindow.Position.Y, AppWindow.Size.Width, AppWindow.Size.Height);
-    internal void HideSettings() => settingsWindow?.Hide();
+    internal void HidePanels() { settingsWindow?.Hide(); plannerWindow?.Hide(); }
+    internal Task<bool> FlushPlanner() => plannerWindow?.FlushAsync() ?? Task.FromResult(true);
+    internal bool PanelModal => settingsWindow?.ModalActive == true || plannerWindow?.ModalActive == true;
     internal void RequestSettings()
     {
         if (surface.IsLoaded) OpenSettings(); else surface.Loaded += ShowSettingsOnLoad;
@@ -177,7 +245,7 @@ public sealed partial class BarWindow : Window
     {
         if (closing) return;
         transition.Cancel(); appearanceMonitor?.SetEnabled(false);
-        if (suspended) { settingsWindow?.Hide(); return; }
+        if (suspended) { HidePanels(); return; }
         // A new controller reconnects to DWM after resume/theme/composition changes.
         SystemBackdrop = null; renderedAppearance = null;
         Position(); ApplyExpanded(); appearanceMonitor?.Refresh();
@@ -194,7 +262,7 @@ public sealed partial class BarWindow : Window
     {
         if (closing || !barVisible || !Native.MonitorExists(Display.Handle)) return;
         actions.Visibility = preferences.BarHeight >= 24 ? Visibility.Visible : Visibility.Collapsed;
-        shelf.Height = settings.Height = Math.Min(28, preferences.BarHeight);
+        foreach (var button in actions.Children.OfType<Button>()) button.Height = Math.Min(28, preferences.BarHeight);
         var approved = reservation.Reserve(Display.BarBounds(preferences.BarHeight));
         var actual = new Windows.Graphics.RectInt32(AppWindow.Position.X, AppWindow.Position.Y, AppWindow.Size.Width, AppWindow.Size.Height);
         if (!Native.Same(approved, actual)) { transition.Cancel(); AppWindow.MoveAndResize(approved); }
@@ -281,6 +349,8 @@ public sealed partial class BarWindow : Window
 
     void OpenSettings()
     {
+        if (PanelModal || manager?.HasModal == true) return;
+        plannerWindow?.Hide();
         manager?.HideOtherPanels(this);
         settingsWindow ??= new SettingsWindow(preferences,
             () => { if (manager != null) manager.ApplyMaterial(); else ApplyGlass(); },
@@ -289,6 +359,36 @@ public sealed partial class BarWindow : Window
         settingsWindow.UpdateDisplay(Display);
         settingsWindow.RefreshStyle(preferences.Style);
         settingsWindow.Open(windowShown ? AppWindow.Position.Y + AppWindow.Size.Height : Display.Info.Work.Top);
+    }
+    async void OpenPlanner(PlannerPage page)
+    {
+        if (openingPlanner || closing || PanelModal || manager?.HasModal == true) return;
+        if (plannerWindow?.IsOpen == true && plannerWindow.Page == page && plannerWindow.DisplayDevice == Display.Device)
+        { plannerWindow.Hide(); return; }
+        openingPlanner = true;
+        try
+        {
+            settingsWindow?.Hide(); manager?.HideOtherPanels(this);
+            plannerWindow ??= manager?.GetPlanner(Display) ?? new PlannerWindow(App.Planner, Display);
+            await plannerWindow.Open(page, Display, windowShown ? AppWindow.Position.Y + AppWindow.Size.Height : Display.Info.Work.Top);
+        }
+        finally { openingPlanner = false; }
+    }
+    internal bool RequestReminder(Guid id)
+    {
+        if (openingPlanner || closing || PanelModal) return false;
+        OpenReminder(id); return true;
+    }
+    async void OpenReminder(Guid id)
+    {
+        openingPlanner = true;
+        try
+        {
+            settingsWindow?.Hide(); manager?.HideOtherPanels(this);
+            plannerWindow ??= manager?.GetPlanner(Display) ?? new PlannerWindow(App.Planner, Display);
+            await plannerWindow.OpenReminder(id, Display, windowShown ? AppWindow.Position.Y + AppWindow.Size.Height : Display.Info.Work.Top);
+        }
+        finally { openingPlanner = false; }
     }
     void ToggleBar()
     {
@@ -299,7 +399,7 @@ public sealed partial class BarWindow : Window
     {
         barVisible = visible;
         if (barVisible) Position();
-        else { settingsWindow?.Hide(); reservation.Release(); }
+        else { HidePanels(); reservation.Release(); }
         UpdateVisibility();
     }
 

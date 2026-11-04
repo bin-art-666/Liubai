@@ -72,6 +72,7 @@ internal sealed partial class SettingsWindow : PanelWindow
         stack.Children.Add(new TextBlock { Text = "顶栏外观", FontSize = 24, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
         stack.Children.Add(Hint("从预设开始，微调到喜欢的通透感。"));
         stack.Children.Add(BuildDailySettings());
+        stack.Children.Add(BuildScreenshotSettings());
         height = AddSlider(stack, "顶栏高度", "最小 1，默认 36；低于 24 时通过托盘打开设置。", AppearanceStore.MinimumHeight, AppearanceStore.MaximumHeight, " px", PreviewHeight);
         var resetHeight = new Button { Content = "恢复默认高度", HorizontalAlignment = HorizontalAlignment.Left };
         resetHeight.Click += (_, _) => height.Value = AppearanceStore.DefaultHeight;

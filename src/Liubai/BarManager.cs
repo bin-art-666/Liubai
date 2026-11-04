@@ -11,7 +11,9 @@ internal sealed partial class BarManager
     readonly DispatcherQueueTimer refreshTimer;
     readonly Dictionary<(uint, long), long> environmentEvents = new();
     bool quitting, reconciling, asleep, locked, visible = true;
+    PlannerWindow? plannerPanel;
     internal bool Suspended => asleep || locked;
+    internal bool HasModal => bars.Values.Any(b => b.PanelModal);
 
     internal BarManager(AppearanceStore preferences, DispatcherQueue dispatcher)
     {
@@ -46,6 +48,11 @@ internal sealed partial class BarManager
                     bar.Start(false); bar.SetVisible(visible);
                 }
             }
+            if (plannerPanel?.IsOpen == true)
+            {
+                var panelDisplay = displays.FirstOrDefault(d => d.Device == plannerPanel.DisplayDevice);
+                if (panelDisplay == null) plannerPanel.Hide(); else plannerPanel.UpdateDisplay(panelDisplay);
+            }
         }
         finally { reconciling = false; }
     }
@@ -56,12 +63,17 @@ internal sealed partial class BarManager
         if (environmentEvents.TryGetValue((message, parameter), out long previous) && now - previous < 150) return;
         if (environmentEvents.Count > 64) environmentEvents.Clear();
         environmentEvents[(message, parameter)] = now;
+        if (message == 0x001E || message == 0x001A && parameter != 47)
+        { TimeZoneInfo.ClearCachedData(); App.Reminders?.Wake(); }
         if (message == 0x0218 && parameter == 4) asleep = true;
         if (message == 0x0218 && parameter is 7 or 18) asleep = false;
         if (message == 0x02B1 && parameter == 7) locked = true;
         if (message == 0x02B1 && parameter == 8) locked = false;
         if (message is 0x0218 or 0x02B1)
+        {
+            App.Reminders?.SetSuspended(Suspended);
             foreach (var bar in bars.Values.ToArray()) bar.Recover(Suspended);
+        }
         if (message is 0x007E or 0x02E0 or 0x031A or 0x031E || message == 0x001A && parameter != 47
             || message == 0x0218 && parameter is 7 or 18 || message == 0x02B1 && parameter == 8)
         {
@@ -80,7 +92,15 @@ internal sealed partial class BarManager
         refreshTimer.Stop(); refreshTimer.Start();
     }
     internal void HideOtherPanels(BarWindow owner)
-    { foreach (var bar in bars.Values) if (bar != owner) bar.HideSettings(); }
+    { foreach (var bar in bars.Values) if (bar != owner) bar.HidePanels(); }
+    internal PlannerWindow GetPlanner(DesktopMonitor display) => plannerPanel ??= new PlannerWindow(App.Planner, display);
+    internal bool RequestReminder(Guid id)
+    {
+        if (quitting || HasModal || Suspended) return false;
+        var monitor = Native.MonitorForWindow(Native.GetForegroundWindow());
+        var owner = bars.Values.FirstOrDefault(b => b.Display.Handle == monitor) ?? bars.Values.FirstOrDefault(b => b.Display.Primary);
+        return owner?.RequestReminder(id) == true;
+    }
     internal void ToggleVisibility()
     { visible = !visible; foreach (var bar in bars.Values.ToArray()) bar.SetVisible(visible); }
     internal void TogglePause()
@@ -92,10 +112,14 @@ internal sealed partial class BarManager
         ApplySettings();
         foreach (var bar in bars.Values) bar.RefreshPanel();
     }
-    internal void Quit()
+    internal async void Quit()
     {
-        if (quitting) return;
-        quitting = true; refreshTimer.Stop();
+        if (quitting || HasModal) return;
+        quitting = true;
+        if (plannerPanel != null && !await plannerPanel.FlushAsync()) { quitting = false; return; }
+        if (App.Reminders != null) await App.Reminders.Stop();
+        await ScreenshotService.Flush();
+        refreshTimer.Stop(); plannerPanel?.Destroy();
         foreach (var bar in bars.Values.ToArray()) bar.Shutdown();
         bars.Clear(); WindowsCompositionQueue.ExitApplication();
     }

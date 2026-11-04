@@ -14,6 +14,7 @@ internal sealed class TrayIcon : IDisposable
     readonly Action<GlassStyle> setStyle;
     readonly Func<bool> paused;
     readonly Action togglePause;
+    readonly Action? openTasks, openNotes;
     readonly WindowProcedure procedure;
     readonly uint explorerCreated = RegisterWindowMessage("TaskbarCreated");
     readonly UIntPtr subclassId = new(0x4C54);
@@ -39,12 +40,13 @@ internal sealed class TrayIcon : IDisposable
 
     internal TrayIcon(IntPtr window, DispatcherQueue dispatcher, Action openSettings, Action toggleBar,
         Func<bool> isVisible, Func<GlassStyle> getStyle, Action<GlassStyle> setStyle, Action quit,
-        Func<bool>? paused = null, Action? togglePause = null)
+        Func<bool>? paused = null, Action? togglePause = null, Action? openTasks = null, Action? openNotes = null)
     {
         this.window = window; this.dispatcher = dispatcher; this.openSettings = openSettings;
         this.toggleBar = toggleBar; this.isVisible = isVisible; this.getStyle = getStyle;
         this.setStyle = setStyle; this.quit = quit;
         this.paused = paused ?? (() => false); this.togglePause = togglePause ?? (() => { });
+        this.openTasks = openTasks; this.openNotes = openNotes;
         icon = LoadImage(IntPtr.Zero, Path.Combine(AppContext.BaseDirectory, "Assets", "Liubai.ico"), 1, 32, 32, 0x10);
         if (icon == IntPtr.Zero) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
         procedure = HandleMessage;
@@ -98,6 +100,8 @@ internal sealed class TrayIcon : IDisposable
         try
         {
             AppendMenu(menu, 0, 1, "打开设置");
+            if (openTasks != null) AppendMenu(menu, 0, 5, "打开待办");
+            if (openNotes != null) AppendMenu(menu, 0, 6, "打开随手记");
             AppendMenu(menu, 0, 2, isVisible() ? "隐藏顶栏" : "显示顶栏");
             AppendMenu(menu, 0, 4, paused() ? "恢复颜色跟随" : "暂停颜色跟随");
             AppendMenu(menu, 0x800, 0, null);
@@ -116,6 +120,8 @@ internal sealed class TrayIcon : IDisposable
         else if (command == 2) toggleBar();
         else if (command == 3) quit();
         else if (command == 4) togglePause();
+        else if (command == 5) openTasks?.Invoke();
+        else if (command == 6) openNotes?.Invoke();
         else if (command is >= 10 and <= 13) setStyle((GlassStyle)(command - 10));
     }
 

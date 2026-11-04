@@ -12,6 +12,7 @@ internal abstract class PanelWindow : Window
     int modalDepth;
     OutsideClickWatcher? outsideClicks;
     internal bool IsOpen { get; private set; }
+    internal bool ModalActive => modalDepth > 0;
 
     protected PanelWindow()
     {
@@ -56,7 +57,7 @@ internal abstract class PanelWindow : Window
 
     internal void Hide()
     {
-        if (!IsOpen || closed) return;
+        if (!IsOpen || closed || modalDepth > 0) return;
         activationVersion++;
         IsOpen = false;
         outsideClicks?.Dispose();

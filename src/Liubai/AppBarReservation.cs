@@ -100,7 +100,7 @@ internal sealed class AppBarReservation : IDisposable
     {
         if (!disposed)
         {
-            if (message is 0x007E or 0x02E0 or 0x001A or 0x0218 or 0x02B1 or 0x031A or 0x031E)
+            if (message is 0x007E or 0x02E0 or 0x001A or 0x001E or 0x0218 or 0x02B1 or 0x031A or 0x031E)
             {
                 long parameter = wParam.ToInt64();
                 dispatcher.TryEnqueue(() => { if (!disposed) environmentChanged?.Invoke(message, parameter); });

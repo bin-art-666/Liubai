@@ -112,6 +112,7 @@ internal sealed partial class SettingsWindow
         allDisplays.IsOn = preferences.AllDisplays; followPaused.IsOn = preferences.FollowPaused;
         try { startup.IsOn = StartupService.Enabled; startup.IsEnabled = true; } catch { startup.IsEnabled = false; }
         RefreshPersonalPresets();
+        RefreshScreenshotSettings();
     }
     bool PrepareSave()
     {
