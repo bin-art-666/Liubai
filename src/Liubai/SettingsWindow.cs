@@ -78,7 +78,7 @@ internal sealed partial class SettingsWindow : PanelWindow
         stack.Children.Add(resetHeight);
         stack.Children.Add(Separator());
         stack.Children.Add(new TextBlock { Text = "最大化／全屏外观", FontSize = 19, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
-        expandedEnabled = new ToggleSwitch { Header = "启用专用外观", OnContent = "跟随当前窗口", OffContent = "使用日常外观，全屏时隐藏" };
+        expandedEnabled = new ToggleSwitch { Header = "启用专用外观", OnContent = "仅最大化或全屏时启用", OffContent = "使用日常外观，全屏时隐藏" };
         AutomationProperties.SetName(expandedEnabled, "启用最大化和全屏专用外观");
         stack.Children.Add(expandedEnabled);
         expandedMode = Combo("外观模式", "自动黑白", "自定义底色", "跟随窗口颜色");
@@ -104,6 +104,7 @@ internal sealed partial class SettingsWindow : PanelWindow
         expandedCustom.Children.Add(expandedError);
         stack.Children.Add(expandedCustom);
         stack.Children.Add(Hint("自动黑白识别窗口明暗；跟随窗口颜色延伸顶部底色。图标自动选黑白，窗口还原后恢复日常玻璃。"));
+        stack.Children.Add(Hint("普通窗口和分屏使用日常玻璃。跟随取色需横向覆盖足够；局部区域或遮挡不会决定整条顶栏的颜色。"));
         expandedSpeed = Combo("切换速度", "灵敏", "均衡（推荐）", "稳重");
         expandedAnimation = Combo("过渡动画", "标准", "柔和", "关闭");
         stack.Children.Add(expandedSpeed);
@@ -114,8 +115,9 @@ internal sealed partial class SettingsWindow : PanelWindow
         preset = Combo("外观预设", "轻透玻璃", "柔和磨砂", "浓厚亚克力", "自定义");
         stack.Children.Add(preset);
         stack.Children.Add(Separator());
-        basis = Combo("材质基底", "轻薄玻璃", "厚实亚克力");
+        basis = Combo("材质基底", "轻薄玻璃", "厚实亚克力", "无基底");
         stack.Children.Add(basis);
+        stack.Children.Add(Hint("无基底不模糊背景，仅保留染色与明暗遮罩；两项均为 0 时完全透明。"));
         tint = AddSlider(stack, "染色不透明度", "越低越通透，越高颜色越浓。");
         luminosity = AddSlider(stack, "明暗遮罩", "调节背景的明暗层次与遮蔽感。");
         automatic = new ToggleSwitch { Header = "染色跟随系统明暗", OnContent = "自动配色", OffContent = "自定义颜色" };
@@ -268,7 +270,7 @@ internal sealed partial class SettingsWindow : PanelWindow
             expandedError.Visibility = Visibility.Collapsed;
             UpdateExpandedControls();
             preset.SelectedIndex = (int)style;
-            basis.SelectedIndex = material.Thin ? 0 : 1;
+            basis.SelectedIndex = material.NoBase ? 2 : material.Thin ? 0 : 1;
             tint.Value = Math.Round(material.TintOpacity * 100);
             luminosity.Value = Math.Round(material.LuminosityOpacity * 100);
             automatic.IsOn = material.FollowTheme;
@@ -346,7 +348,7 @@ internal sealed partial class SettingsWindow : PanelWindow
     {
         string hex = MaterialOptions.IsColor(colorInput.Text) ? colorInput.Text.ToUpperInvariant() : preferences.Material.TintHex;
         preferences.Preview(new MaterialOptions(basis.SelectedIndex == 0, (float)tint.Value / 100,
-            (float)luminosity.Value / 100, automatic.IsOn, hex, line.IsOn));
+            (float)luminosity.Value / 100, automatic.IsOn, hex, line.IsOn, basis.SelectedIndex == 2));
         syncing = true;
         preset.SelectedIndex = (int)GlassStyle.Custom;
         syncing = false;

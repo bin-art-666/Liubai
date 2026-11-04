@@ -66,7 +66,9 @@ internal sealed partial class BarManager
             || message == 0x0218 && parameter is 7 or 18 || message == 0x02B1 && parameter == 8)
         {
             refreshTimer.Stop(); refreshTimer.Start();
-            if (message is 0x001A or 0x031A or 0x031E)
+            if (message is 0x001A or 0x031A)
+                foreach (var bar in bars.Values.ToArray()) bar.RefreshEnvironment();
+            else if (message == 0x031E)
                 foreach (var bar in bars.Values.ToArray()) bar.Recover(Suspended);
         }
     }
@@ -95,6 +97,6 @@ internal sealed partial class BarManager
         if (quitting) return;
         quitting = true; refreshTimer.Stop();
         foreach (var bar in bars.Values.ToArray()) bar.Shutdown();
-        bars.Clear(); Application.Current.Exit();
+        bars.Clear(); WindowsCompositionQueue.ExitApplication();
     }
 }

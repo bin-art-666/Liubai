@@ -21,9 +21,11 @@ internal readonly record struct AppearanceTiming(int Source, int Scene, int Quie
     };
 }
 
-internal readonly record struct ExpandedSnapshot(bool IsExpanded, long Window, uint Color, bool IsDark)
+internal readonly record struct ExpandedSnapshot(bool IsExpanded, long Window, uint Color, bool IsDark, bool HasColor = true)
 {
-    internal static ExpandedSnapshot Normal => new(false, 0, 0x202020, true);
+    internal static ExpandedSnapshot Normal => new(false, 0, 0x202020, true, false);
+    internal bool UsesSolid(ExpandedAppearanceOptions options) => options.Enabled && IsExpanded
+        && (options.Mode == ExpandedMode.Custom || HasColor);
 }
 
 internal readonly record struct WindowGeometry(int Left, int Top, int Right, int Bottom);
@@ -93,14 +95,15 @@ internal sealed class ExpandedAppearanceTracker
             frameWindow = observation.Window; frame = observation.Frame; lastMotion = now;
         }
         uint color = observation.Color ?? Current.Color;
+        bool hasColor = observation.Color.HasValue || observation.Window == Current.Window && Current.IsExpanded && Current.HasColor;
         double brightness = WindowColorAnalysis.Brightness(color);
         bool dark = observation.Window == Current.Window ? Current.IsDark : brightness < .5;
         if (brightness <= .44) dark = true;
         else if (brightness >= .60) dark = false;
-        var next = observation.IsExpanded ? new ExpandedSnapshot(true, observation.Window, color, dark)
-            : Current with { IsExpanded = false, Window = 0 };
+        var next = observation.IsExpanded ? new ExpandedSnapshot(true, observation.Window, color, dark, hasColor)
+            : Current with { IsExpanded = false, Window = 0, HasColor = false };
         static bool Same(ExpandedSnapshot a, ExpandedSnapshot b) => a.IsExpanded == b.IsExpanded
-            && a.Window == b.Window && a.IsDark == b.IsDark && WindowColorAnalysis.Similar(a.Color, b.Color);
+            && a.Window == b.Window && a.HasColor == b.HasColor && a.IsDark == b.IsDark && WindowColorAnalysis.Similar(a.Color, b.Color);
         if (Same(next, Current)) { candidate = null; return null; }
         if (candidate is { } previous && Same(previous, next))
         {

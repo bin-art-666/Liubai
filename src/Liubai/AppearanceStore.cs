@@ -5,8 +5,18 @@ namespace Liubai;
 public enum GlassStyle { Light, Frosted, Acrylic, Custom }
 
 public sealed record MaterialOptions(bool Thin = false, float TintOpacity = .22f,
-    float LuminosityOpacity = .78f, bool FollowTheme = true, string TintHex = "#D5E9E1", bool ShowLine = false)
+    float LuminosityOpacity = .78f, bool FollowTheme = true, string TintHex = "#D5E9E1", bool ShowLine = false, bool NoBase = false)
 {
+    internal (byte Alpha, uint Rgb) FlatColor(bool dark)
+    {
+        uint tint = FollowTheme ? (dark ? 0x141D1Cu : 0xF6FBF9u) : Convert.ToUInt32(TintHex[1..], 16);
+        double tintAlpha = TintOpacity, maskAlpha = LuminosityOpacity * (1 - tintAlpha);
+        double alpha = tintAlpha + maskAlpha;
+        if (alpha == 0) return (0, 0);
+        uint Channel(int shift) => (uint)Math.Clamp(Math.Round((((tint >> shift) & 255) * tintAlpha
+            + (dark ? 0 : 255) * maskAlpha) / alpha), 0, 255);
+        return ((byte)Math.Round(alpha * 255), (Channel(16) << 16) | (Channel(8) << 8) | Channel(0));
+    }
     public static MaterialOptions ForPreset(GlassStyle style) => style switch
     {
         GlassStyle.Light => new(true, .08f, .55f),

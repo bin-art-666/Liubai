@@ -14,7 +14,8 @@ public sealed partial class BarWindow : Window
     readonly BarManager? manager;
     internal DesktopMonitor Display { get; private set; }
     readonly Border surface;
-    readonly Button settings;
+    readonly Button settings, shelf;
+    readonly StackPanel actions;
     readonly BarAppearanceTransition transition;
     string? renderedAppearance;
     SettingsWindow? settingsWindow;
@@ -48,18 +49,16 @@ public sealed partial class BarWindow : Window
         int borderColor = unchecked((int)0xFFFFFFFE);
         Native.DwmSetWindowAttribute(handle, 34, ref borderColor, sizeof(int));
 
-        settings = new Button
+        shelf = CreateToolbarButton("\uE7B8", "收纳盒");
+        settings = CreateToolbarButton("\uE713", "设置");
+        actions = new StackPanel
         {
-            Content = new FontIcon { Glyph = "\uE713", FontFamily = new FontFamily("Segoe Fluent Icons"), FontSize = 15 },
-            Width = 34, Height = 28, MinWidth = 0, MinHeight = 0,
-            Padding = new Thickness(0), Margin = new Thickness(0, 0, 8, 0),
+            Orientation = Orientation.Horizontal, Spacing = 2, Margin = new Thickness(0, 0, 8, 0),
             HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center,
-            Background = new SolidColorBrush(Colors.Transparent), BorderThickness = new Thickness(0),
-            CornerRadius = new CornerRadius(7)
         };
-        AutomationProperties.SetName(settings, "设置");
-        ToolTipService.SetToolTip(settings, "设置");
-        surface = new Border { Child = settings, BorderThickness = new Thickness(0) };
+        actions.Children.Add(shelf);
+        actions.Children.Add(settings);
+        surface = new Border { Child = actions, BorderThickness = new Thickness(0) };
         var cover = new Image { IsHitTestVisible = false, Stretch = Stretch.Fill, Visibility = Visibility.Collapsed };
         transition = new BarAppearanceTransition(cover);
         var layers = new Grid(); layers.Children.Add(surface); layers.Children.Add(cover);
@@ -67,7 +66,7 @@ public sealed partial class BarWindow : Window
         settings.Click += (_, _) => ToggleSettings();
         surface.ActualThemeChanged += (_, _) =>
         {
-            if (!transition.Active && !(preferences.Expanded.Enabled && expandedSnapshot.IsExpanded)) UpdateSurface();
+            if (!transition.Active && !expandedSnapshot.UsesSolid(preferences.Expanded)) UpdateSurface();
         };
         UpdateSurface();
         ApplyGlass();
@@ -80,6 +79,39 @@ public sealed partial class BarWindow : Window
         Closed += (_, _) => { if (!closing) Quit(); };
     }
 
+    static Button CreateToolbarButton(string glyph, string name)
+    {
+        var button = new Button
+        {
+            Content = new FontIcon { Glyph = glyph, FontFamily = new FontFamily("Segoe Fluent Icons"), FontSize = 15 },
+            Width = 34, Height = 28, MinWidth = 0, MinHeight = 0, Padding = new Thickness(0),
+            VerticalAlignment = VerticalAlignment.Center,
+            Background = new SolidColorBrush(Colors.Transparent), BorderThickness = new Thickness(0),
+            CornerRadius = new CornerRadius(7)
+        };
+        AutomationProperties.SetName(button, name);
+        ToolTipService.SetToolTip(button, name);
+        return button;
+    }
+
+    void SetToolbarColors(ElementTheme theme, SolidColorBrush? ink)
+    {
+        foreach (var button in new[] { shelf, settings })
+        {
+            button.RequestedTheme = theme;
+            if (ink != null)
+            {
+                button.Foreground = ink;
+                ((FontIcon)button.Content).Foreground = ink;
+            }
+            else
+            {
+                button.ClearValue(Control.ForegroundProperty);
+                ((FontIcon)button.Content).ClearValue(IconElement.ForegroundProperty);
+            }
+        }
+    }
+
     public void Start(bool showSettings)
     {
         Position();
@@ -89,7 +121,7 @@ public sealed partial class BarWindow : Window
         UpdateTray();
         appearanceMonitor = new ExpandedWindowMonitor(DispatcherQueue, () => windowShown ? AppWindow.Size.Height : 0,
             snapshot => { expandedSnapshot = snapshot; RenderAppearance(true); UpdateVisibility(); },
-            transition.Cancel, () => transition.Active, () => Display);
+            () => transition.Active, () => Display, () => preferences.Expanded.Mode != ExpandedMode.Custom);
         appearanceMonitor.SetSpeed(preferences.Expanded.Speed);
         appearanceMonitor.SetEnabled(preferences.Expanded.Enabled && !preferences.FollowPaused && manager?.Suspended != true);
         if (showSettings)
@@ -101,7 +133,7 @@ public sealed partial class BarWindow : Window
         else if (Environment.GetCommandLineArgs().Contains("--verify-shell")) _ = VerifyShell();
     }
 
-    void Quit() { if (manager != null) manager.Quit(); else { Shutdown(); Application.Current.Exit(); } }
+    void Quit() { if (manager != null) manager.Quit(); else { Shutdown(); WindowsCompositionQueue.ExitApplication(); } }
     internal void Shutdown()
     {
         if (closing) return;
@@ -122,6 +154,13 @@ public sealed partial class BarWindow : Window
         if (changed) { transition.Cancel(); Position(); appearanceMonitor?.Refresh(); settingsWindow?.UpdateDisplay(display); }
     }
     internal void RefreshMaterial() => ApplyGlass();
+    internal void RefreshEnvironment()
+    {
+        if (closing) return;
+        if (SystemBackdrop is GlassBackdrop glass) glass.Update(preferences.Material);
+        if (!transition.Active) RenderAppearance();
+        appearanceMonitor?.Refresh();
+    }
     internal void RefreshHeight() => Position();
     internal void RefreshSettings() { ApplyExpanded(); ApplyGlass(); Position(); }
     internal void RefreshPanel() => settingsWindow?.RefreshStyle(preferences.Style);
@@ -154,8 +193,8 @@ public sealed partial class BarWindow : Window
     void Position()
     {
         if (closing || !barVisible || !Native.MonitorExists(Display.Handle)) return;
-        settings.Visibility = preferences.BarHeight >= 24 ? Visibility.Visible : Visibility.Collapsed;
-        settings.Height = Math.Min(28, preferences.BarHeight);
+        actions.Visibility = preferences.BarHeight >= 24 ? Visibility.Visible : Visibility.Collapsed;
+        shelf.Height = settings.Height = Math.Min(28, preferences.BarHeight);
         var approved = reservation.Reserve(Display.BarBounds(preferences.BarHeight));
         var actual = new Windows.Graphics.RectInt32(AppWindow.Position.X, AppWindow.Position.Y, AppWindow.Size.Width, AppWindow.Size.Height);
         if (!Native.Same(approved, actual)) { transition.Cancel(); AppWindow.MoveAndResize(approved); }
@@ -166,7 +205,7 @@ public sealed partial class BarWindow : Window
     void RenderAppearance(bool animate = false)
     {
         if (rendering || closing) return;
-        string key = preferences.Expanded.Enabled && expandedSnapshot.IsExpanded
+        string key = expandedSnapshot.UsesSolid(preferences.Expanded)
             ? "solid:" + WindowColorAnalysis.Background(preferences.Expanded, expandedSnapshot)
             : "glass:" + preferences.Material + ":" + surface.ActualTheme;
         if (animate && key == renderedAppearance) return;
@@ -176,25 +215,26 @@ public sealed partial class BarWindow : Window
         rendering = true;
         try
         {
-        if (preferences.Expanded.Enabled && expandedSnapshot.IsExpanded)
+        // Keep native acrylic warm behind the opaque maximized surface. Returning
+        // to glass then reveals an existing material instead of reconnecting DWM.
+        if (SystemBackdrop is GlassBackdrop warmGlass) warmGlass.Update(preferences.Material);
+        else SystemBackdrop = new GlassBackdrop(preferences.Material);
+        if (expandedSnapshot.UsesSolid(preferences.Expanded))
         {
             uint rgb = WindowColorAnalysis.Background(preferences.Expanded, expandedSnapshot);
             bool white = WindowColorAnalysis.WhiteForeground(rgb);
-            surface.RequestedTheme = white ? ElementTheme.Dark : ElementTheme.Light;
-            SystemBackdrop = null;
+            // Only the button theme changes; the acrylic/root theme stays stable.
             surface.Background = new SolidColorBrush(Windows.UI.Color.FromArgb(255, (byte)(rgb >> 16), (byte)(rgb >> 8), (byte)rgb));
             surface.BorderThickness = new Thickness(0);
             var ink = new SolidColorBrush(white ? Colors.White : Colors.Black);
-            settings.Foreground = ink;
-            ((FontIcon)settings.Content).Foreground = ink;
+            SetToolbarColors(white ? ElementTheme.Dark : ElementTheme.Light, ink);
             return;
         }
         surface.RequestedTheme = ElementTheme.Default;
-        settings.ClearValue(Control.ForegroundProperty);
-        ((FontIcon)settings.Content).ClearValue(IconElement.ForegroundProperty);
+        SetToolbarColors(ElementTheme.Default, null);
         bool dark = surface.ActualTheme == ElementTheme.Dark;
         surface.BorderBrush = new SolidColorBrush(Windows.UI.Color.FromArgb(dark ? (byte)32 : (byte)24, dark ? (byte)255 : (byte)34, dark ? (byte)255 : (byte)66, dark ? (byte)255 : (byte)56));
-        surface.Background = DesktopAcrylicController.IsSupported() ? new SolidColorBrush(Colors.Transparent)
+        surface.Background = preferences.Material.NoBase || DesktopAcrylicController.IsSupported() ? new SolidColorBrush(Colors.Transparent)
             : new SolidColorBrush(dark ? Windows.UI.Color.FromArgb(255, 31, 39, 38) : Windows.UI.Color.FromArgb(255, 239, 245, 242));
         if (SystemBackdrop is GlassBackdrop glass) glass.Update(preferences.Material);
         else SystemBackdrop = new GlassBackdrop(preferences.Material);

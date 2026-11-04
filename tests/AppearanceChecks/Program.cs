@@ -178,6 +178,63 @@ try
     bool failedWrite = false; try { blocked.Import(exported); } catch (IOException) { failedWrite = true; }
     Check(failedWrite && blocked.Style == GlassStyle.Frosted && blocked.Presets.Count == 0,
         "A failed disk replacement must not partially apply an imported configuration.");
+    var screen = new WindowGeometry(0, 0, 1920, 1080);
+    var work = new WindowGeometry(0, 48, 1920, 1040);
+    Check(ExpandedWindowPolicy.IsExpanded(work, screen, work, 192, true), "A genuinely maximized window must enter the dedicated scene.");
+    Check(!ExpandedWindowPolicy.IsExpanded(new(200, 100, 1400, 900), screen, work, 192, false), "A floating window must never activate maximized appearance.");
+    Check(!ExpandedWindowPolicy.IsExpanded(new(0, 48, 960, 1040), screen, work, 192, true), "A stale maximized flag must not promote a half-width window.");
+    Check(!ExpandedWindowPolicy.IsExpanded(work, screen, work, 192, false), "An ordinary resized-to-work-area window must stay in the normal scene.");
+    Check(ExpandedWindowPolicy.IsExpanded(screen, screen, work, 192, false), "A real borderless fullscreen window must remain supported.");
+    Check(!ExpandedWindowPolicy.IsExpanded(new(8, 56, 1912, 1032), screen, work, 192, true), "Loose edge tolerance must not treat an inset window as maximized.");
+    var secondary = new WindowGeometry(-2560, -200, 0, 1240);
+    var secondaryWork = new WindowGeometry(-2560, -152, 0, 1200);
+    Check(ExpandedWindowPolicy.IsExpanded(secondaryWork, secondary, secondaryWork, 144, true)
+        && !ExpandedWindowPolicy.IsExpanded(work, secondary, secondaryWork, 144, true), "Scene checks must honor negative coordinates and display boundaries.");
+    static BandColorSample[] Band(Func<int, int, uint?> pixel) => Enumerable.Range(0, ExpandedColorPolicy.Columns)
+        .SelectMany(x => Enumerable.Range(0, ExpandedColorPolicy.Rows).Select(y => (x, color: pixel(x, y))))
+        .Where(p => p.color.HasValue).Select(p => new BandColorSample(p.x, p.color!.Value)).ToArray();
+    Check(ExpandedColorPolicy.Representative(Band((x, y) => 0x223344)) == 0x223344, "A full-width solid background must remain detectable.");
+    Check(ExpandedColorPolicy.Representative(Band((x, y) => x < 4 ? 0x3366CCu : null)) == null,
+        "A small visible fragment must never color the full bar.");
+    Check(ExpandedColorPolicy.Representative(Band((x, y) => x is >= 5 and < 10 ? null : 0x223344u)) == null,
+        "An occluded middle region must not be renormalized into a full-window sample.");
+    Check(ExpandedColorPolicy.Representative(Band((x, y) => x is >= 6 and < 10 ? 0xFF0000u : 0x223344u)) == 0x223344,
+        "A localized red panel must not override the broad background.");
+    Check(ExpandedColorPolicy.Representative(Band((x, y) => y == 2 ? 0xFFFFFFu : 0x223344u)) == 0x223344,
+        "Sparse foreground text must not override a distributed dominant background.");
+    Check(ExpandedColorPolicy.Representative(Band((x, y) => x < 8 ? 0xFFFFFFu : 0x000000u)) == null,
+        "A split background without a broad consensus must not pick an arbitrary side.");
+    var confidence = new ExpandedAppearanceTracker();
+    confidence.Observe(new(true, 101, 0x223344), 0); confidence.Observe(new(true, 101, 0x223344), 300);
+    Check(confidence.Current.HasColor && confidence.Current.UsesSolid(new(true, ExpandedMode.FollowWindow)), "A verified broad color must enable followed appearance.");
+    confidence.Observe(new(true, 101, null), 400); confidence.Observe(new(true, 101, null), 700);
+    Check(confidence.Current.HasColor && confidence.Current.Color == 0x223344, "Temporary occlusion may preserve only the same window's verified color.");
+    confidence.Observe(new(true, 202, null), 800); confidence.Observe(new(true, 202, null), 1100);
+    Check(!confidence.Current.HasColor && !confidence.Current.UsesSolid(new(true, ExpandedMode.FollowWindow))
+        && !confidence.Current.UsesSolid(new(true, ExpandedMode.Automatic)), "An unreadable new window must not inherit another window's full-bar color.");
+    Check(confidence.Current.UsesSolid(new(true, ExpandedMode.Custom)), "Custom solid mode must depend on scene eligibility, not captured pixels.");
+    confidence.Observe(new(false, 202, 0xFF0000), 1200); confidence.Observe(new(false, 202, 0xFF0000), 1500);
+    Check(!confidence.Current.UsesSolid(new(true, ExpandedMode.Custom)), "Even a vivid normal window must leave dedicated appearance.");
+    var noBase = new MaterialOptions(false, 0, 0, false, "#FF0000", false, true);
+    Check(noBase.FlatColor(false).Alpha == 0 && noBase.FlatColor(true).Alpha == 0, "Zero tint and mask must be fully transparent without a base.");
+    var redOverlay = (noBase with { TintOpacity = .5f }).FlatColor(false);
+    Check(redOverlay.Alpha == 128 && redOverlay.Rgb == 0xFF0000, "Unblurred tint must retain its color and alpha independently.");
+    Check((noBase with { LuminosityOpacity = 1 }).FlatColor(false) == (255, 0xFFFFFFu)
+        && (noBase with { LuminosityOpacity = 1 }).FlatColor(true) == (255, 0u), "Flat luminosity mask must follow the light/dark theme.");
+    var mixedOverlay = (noBase with { TintOpacity = .5f, LuminosityOpacity = .5f }).FlatColor(true);
+    Check(mixedOverlay.Alpha == 191 && mixedOverlay.Rgb == 0xAA0000, "Flat layers must use alpha compositing rather than adding their opacities.");
+    restored.Preview(noBase); restored.SaveCurrent();
+    Check(new AppearanceStore(path).Material == noBase, "No-base selection must survive restart.");
+    restored.SavePreset("透明测试"); restored.Save(GlassStyle.Frosted);
+    restored.ApplyPreset(restored.Presets.Single(p => p.Name == "透明测试").Id);
+    Check(restored.Material.NoBase, "Personal presets must restore no-base mode.");
+    restored.Export(exported); imported.Import(exported);
+    Check(imported.Material.NoBase && imported.Material.TintOpacity == 0, "Portable configuration must retain transparent mode.");
+    string legacyMaterialPath = Path.Combine(directory, "legacy-material.json");
+    File.WriteAllText(legacyMaterialPath, "{\"Style\":3,\"Custom\":{\"Thin\":true,\"TintOpacity\":0.3}}");
+    var legacyMaterial = new AppearanceStore(legacyMaterialPath).Material;
+    Check(!legacyMaterial.NoBase && legacyMaterial.Thin && legacyMaterial.TintOpacity == .3f,
+        "Existing material JSON without NoBase must retain its original acrylic base and tint.");
     Console.WriteLine($"PASS: {count} appearance persistence, palette and scene stability checks");
 }
 finally

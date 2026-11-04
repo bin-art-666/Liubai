@@ -13,9 +13,9 @@ internal sealed class ExpandedWindowMonitor : IDisposable
     readonly Func<int> barHeight;
     readonly Action<ExpandedSnapshot> changed;
     readonly DispatcherQueue dispatcher;
-    readonly Action interrupt;
     readonly Func<bool> animating;
     readonly Func<DesktopMonitor> display;
+    readonly Func<bool> needsColor;
     ForegroundActivity? activity;
     long fastUntil, stableSince;
     WindowObservation previous;
@@ -26,11 +26,12 @@ internal sealed class ExpandedWindowMonitor : IDisposable
     internal bool Enabled => enabled;
     internal int SampleCount { get; private set; }
     internal ExpandedWindowMonitor(DispatcherQueue dispatcher, Func<int> barHeight, Action<ExpandedSnapshot> changed,
-        Action interrupt, Func<bool> animating, Func<DesktopMonitor>? display = null)
+        Func<bool> animating, Func<DesktopMonitor>? display = null, Func<bool>? needsColor = null)
     {
         this.dispatcher = dispatcher; this.barHeight = barHeight; this.changed = changed;
-        this.interrupt = interrupt; this.animating = animating;
+        this.animating = animating;
         this.display = display ?? (() => Native.Monitors().First(m => m.Primary));
+        this.needsColor = needsColor ?? (() => true);
         timer = dispatcher.CreateTimer(); timer.Interval = TimeSpan.FromMilliseconds(250);
         timer.Tick += (_, _) => _ = Tick();
     }
@@ -48,21 +49,24 @@ internal sealed class ExpandedWindowMonitor : IDisposable
     void Wake()
     {
         if (!enabled || disposed) return;
-        generation++; tracker.Invalidate(); interrupt();
+        // Invalidating observations must not tear down a frame already fading out.
+        // The renderer replaces that frame only when a new appearance is committed.
+        generation++; tracker.Invalidate();
         fastUntil = Environment.TickCount64 + 1000; stableSince = Environment.TickCount64;
         timer.Interval = TimeSpan.FromMilliseconds(AppearanceTiming.For(tracker.Speed).Poll);
-        if (busy) wakePending = true; else _ = Tick();
+        if (busy) wakePending = true; else _ = Tick(force: true);
     }
-    async Task Tick()
+    async Task Tick(bool force = false)
     {
-        if (busy || disposed || !enabled || animating()) return;
+        if (busy || disposed || !enabled || animating() && !force && !tracker.Pending) return;
         busy = true;
         int version = generation;
         try
         {
             int height = barHeight();
             var monitor = display();
-            var observation = await Task.Run(() => sampler.Read(height, monitor));
+            bool sampleColor = needsColor();
+            var observation = await Task.Run(() => sampler.Read(height, monitor, sampleColor));
             SampleCount++;
             if (disposed || !enabled || version != generation) return;
             long now = Environment.TickCount64;
@@ -80,7 +84,7 @@ internal sealed class ExpandedWindowMonitor : IDisposable
         finally
         {
             busy = false;
-            if (wakePending) { wakePending = false; if (enabled && !disposed) _ = Tick(); }
+            if (wakePending) { wakePending = false; if (enabled && !disposed) _ = Tick(force: true); }
         }
     }
     public void Dispose() { disposed = true; enabled = false; generation++; timer.Stop(); activity?.Dispose(); }
@@ -94,7 +98,7 @@ internal sealed class WindowColorSampler
     static readonly HashSet<string> transientClasses = ["Shell_TrayWnd", "Shell_SecondaryTrayWnd", "#32768", "MultitaskingViewFrame", "TaskSwitcherWnd"];
     static readonly HashSet<string> transientProcesses = new(StringComparer.OrdinalIgnoreCase)
         { "StartMenuExperienceHost", "ShellExperienceHost", "ShellHost", "SearchHost", "SearchApp", "LockApp", "LogonUI" };
-    internal WindowObservation Read(int barHeight, DesktopMonitor? display = null)
+    internal WindowObservation Read(int barHeight, DesktopMonitor? display = null, bool sampleColor = true)
     {
         display ??= Native.Monitors().First(m => m.Primary);
         var foreground = Native.GetForegroundWindow();
@@ -124,7 +128,7 @@ internal sealed class WindowColorSampler
             target = local;
         }
         lastTarget = target;
-        var observation = ReadTarget(target, barHeight, display);
+        var observation = ReadTarget(target, barHeight, display, sampleColor);
         if (Native.GetForegroundWindow() != foreground) return new(false, Hold: true);
         return observation;
     }
@@ -142,26 +146,14 @@ internal sealed class WindowColorSampler
         catch { return false; }
     }
     internal static bool IsExpanded(IntPtr target, IntPtr monitorHandle = default)
+        => WindowSceneDetector.Read(target, monitorHandle).IsExpanded;
+    internal WindowObservation ReadTarget(IntPtr target, int barHeight, DesktopMonitor? display = null, bool sampleColor = true)
     {
-        if (!IsWindowVisible(target) || IsIconic(target)) return false;
-        if (DwmGetWindowAttribute(target, 14, out int cloaked, sizeof(int)) == 0 && cloaked != 0) return false;
-        if (DwmGetFrameBounds(target, 9, out var rect, Marshal.SizeOf<Native.Rect>()) != 0 && !GetWindowRect(target, out rect)) return false;
-        var targetMonitor = Native.MonitorForWindow(target);
-        if (monitorHandle != IntPtr.Zero && targetMonitor != monitorHandle) return false;
-        var monitor = Native.MonitorInformation(targetMonitor);
-        int centerX = rect.Left + (rect.Right - rect.Left) / 2, centerY = rect.Top + (rect.Bottom - rect.Top) / 2;
-        if (centerX < monitor.Monitor.Left || centerX >= monitor.Monitor.Right || centerY < monitor.Monitor.Top || centerY >= monitor.Monitor.Bottom) return false;
-        if (IsZoomed(target)) return true;
-        int tolerance = (int)Math.Ceiling(8 * Math.Max(96, Native.GetDpiForWindow(target)) / 96d);
-        return rect.Left <= monitor.Work.Left + tolerance && rect.Right >= monitor.Work.Right - tolerance
-            && rect.Top <= monitor.Work.Top + tolerance && rect.Bottom >= monitor.Work.Bottom - tolerance;
-    }
-    internal WindowObservation ReadTarget(IntPtr target, int barHeight, DesktopMonitor? display = null)
-    {
-        GetWindowRect(target, out var rect);
-        bool expanded = IsExpanded(target, display?.Handle ?? IntPtr.Zero);
-        return new(expanded, target.ToInt64(), expanded ? CaptureTopColor(target, barHeight, display?.Info ?? Native.MonitorInformation(Native.MonitorForWindow(target))) : null,
-            Frame: new(rect.Left, rect.Top, rect.Right, rect.Bottom));
+        var scene = WindowSceneDetector.Read(target, display?.Handle ?? IntPtr.Zero);
+        // A normal window never invokes screen capture. Custom solid mode also
+        // depends only on this scene decision, regardless of colors on screen.
+        uint? color = scene.IsExpanded && sampleColor ? CaptureTopColor(target, barHeight, scene.Display) : null;
+        return new(scene.IsExpanded, target.ToInt64(), color, Frame: scene.Frame);
     }
 
     static uint? CaptureTopColor(IntPtr target, int barHeight, Native.MonitorInfo displayInfo)
@@ -175,7 +167,7 @@ internal sealed class WindowColorSampler
         int left = Math.Max(origin.X + inset, monitor.Left), right = Math.Min(origin.X + client.Right - inset, monitor.Right);
         int top = Math.Max(origin.Y + (int)(2 * scale), monitor.Top + barHeight + (int)(2 * scale));
         int bottom = Math.Min(Math.Min(origin.Y + client.Bottom, monitor.Bottom), top + (int)(48 * scale));
-        if (right - left < 100 || bottom - top < 8) return null;
+        if (right - left < Math.Max(100, (monitor.Right - monitor.Left) * .90) || bottom - top < 8) return null;
         const int width = 96, height = 16;
         IntPtr screen = GetDC(IntPtr.Zero), memory = IntPtr.Zero, bitmap = IntPtr.Zero, previous = IntPtr.Zero;
         if (screen == IntPtr.Zero) return null;
@@ -190,16 +182,16 @@ internal sealed class WindowColorSampler
             if (!StretchBlt(memory, 0, 0, width, height, screen, left, top, right - left, bottom - top, 0x40CC0020)) return null;
             GdiFlush();
             byte[] data = new byte[width * height * 4]; Marshal.Copy(bits, data, 0, data.Length);
-            var pixels = new List<uint>();
+            var pixels = new List<BandColorSample>();
             for (int y = 1; y < height; y += 3)
                 for (int x = 3; x < width; x += 6)
                 {
                     var point = new Native.Point { X = left + x * (right - left) / width, Y = top + y * (bottom - top) / height };
                     if (Native.GetAncestor(WindowFromPoint(point), 2) != target) continue;
                     int i = (y * width + x) * 4;
-                    pixels.Add(((uint)data[i + 2] << 16) | ((uint)data[i + 1] << 8) | data[i]);
+                    pixels.Add(new((x - 3) / 6, ((uint)data[i + 2] << 16) | ((uint)data[i + 1] << 8) | data[i]));
                 }
-            return WindowColorAnalysis.Representative(pixels);
+            return ExpandedColorPolicy.Representative(pixels);
         }
         finally
         {
@@ -223,13 +215,11 @@ internal sealed class WindowColorSampler
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetClassName(IntPtr window, StringBuilder text, int length);
     [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr window);
     [DllImport("user32.dll")] static extern bool IsIconic(IntPtr window);
-    [DllImport("user32.dll")] static extern bool IsZoomed(IntPtr window);
     [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr window, out Native.Rect rect);
     [DllImport("user32.dll")] static extern bool GetClientRect(IntPtr window, out Native.Rect rect);
     [DllImport("user32.dll")] static extern bool ClientToScreen(IntPtr window, ref Native.Point point);
     [DllImport("user32.dll")] static extern IntPtr WindowFromPoint(Native.Point point);
     [DllImport("dwmapi.dll")] static extern int DwmGetWindowAttribute(IntPtr window, uint attribute, out int value, int size);
-    [DllImport("dwmapi.dll", EntryPoint = "DwmGetWindowAttribute")] static extern int DwmGetFrameBounds(IntPtr window, uint attribute, out Native.Rect rect, int size);
     [DllImport("user32.dll")] static extern IntPtr GetDC(IntPtr window);
     [DllImport("user32.dll")] static extern int ReleaseDC(IntPtr window, IntPtr dc);
     [DllImport("gdi32.dll")] static extern IntPtr CreateCompatibleDC(IntPtr dc);
