@@ -42,6 +42,7 @@ public sealed partial class BarWindow
     {
         if (closing || openingPlanner || PanelModal || manager?.HasModal == true || manager?.Suspended == true || !Native.MonitorExists(Display.Handle)) return false;
         clockWindow?.Hide();
+        App.Ai.Hide(false);
         settingsWindow?.Hide(); plannerWindow?.Hide(); qrResults?.Hide(); manager?.HideOtherPanels(this);
         stationWindow ??= new StationWindow(App.Station, Display);
         stationWindow.Open(Display, windowShown ? AppWindow.Position.Y + AppWindow.Size.Height : Display.Info.Work.Top, forDrop);

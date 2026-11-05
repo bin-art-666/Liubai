@@ -69,22 +69,27 @@ internal sealed partial class SettingsWindow : PanelWindow
         root.Children.Add(header);
 
         var stack = new StackPanel { Spacing = 16, Padding = new Thickness(0, 0, 8, 4) };
-        stack.Children.Add(new TextBlock { Text = "顶栏外观", FontSize = 24, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
-        stack.Children.Add(Hint("从预设开始，微调到喜欢的通透感。"));
+        stack.Children.Add(new TextBlock { Text = "留白设置", FontSize = 24, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
+        stack.Children.Add(Hint("管理常用功能与顶栏外观。"));
         stack.Children.Add(BuildDailySettings());
         stack.Children.Add(BuildScreenshotSettings());
         stack.Children.Add(BuildClockSettings());
-        height = AddSlider(stack, "顶栏高度", "最小 1，默认 36；低于 24 时通过托盘打开设置。", AppearanceStore.MinimumHeight, AppearanceStore.MaximumHeight, " px", PreviewHeight);
+        stack.Children.Add(BuildStationSettings());
+        stack.Children.Add(BuildGuardSettings());
+        stack.Children.Add(BuildPrivacySettings());
+        stack.Children.Add(BuildAiSettings());
+        var appearance = new StackPanel { Spacing = 16 };
+        height = AddSlider(appearance, "顶栏高度", "最小 1，默认 36；低于 24 时通过托盘打开设置。", AppearanceStore.MinimumHeight, AppearanceStore.MaximumHeight, " px", PreviewHeight);
         var resetHeight = new Button { Content = "恢复默认高度", HorizontalAlignment = HorizontalAlignment.Left };
         resetHeight.Click += (_, _) => height.Value = AppearanceStore.DefaultHeight;
-        stack.Children.Add(resetHeight);
-        stack.Children.Add(Separator());
-        stack.Children.Add(new TextBlock { Text = "最大化／全屏外观", FontSize = 19, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
+        appearance.Children.Add(resetHeight);
+        appearance.Children.Add(Separator());
+        appearance.Children.Add(new TextBlock { Text = "最大化／全屏外观", FontSize = 19, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
         expandedEnabled = new ToggleSwitch { Header = "启用专用外观", OnContent = "仅最大化或全屏时启用", OffContent = "使用日常外观，全屏时隐藏" };
         AutomationProperties.SetName(expandedEnabled, "启用最大化和全屏专用外观");
-        stack.Children.Add(expandedEnabled);
+        appearance.Children.Add(expandedEnabled);
         expandedMode = Combo("外观模式", "自动黑白", "自定义底色", "跟随窗口颜色");
-        stack.Children.Add(expandedMode);
+        appearance.Children.Add(expandedMode);
         expandedCustom = new StackPanel { Spacing = 8 };
         expandedColorPreview = new Border { Height = 24, CornerRadius = new CornerRadius(6) };
         expandedCustom.Children.Add(expandedColorPreview);
@@ -104,27 +109,27 @@ internal sealed partial class SettingsWindow : PanelWindow
         expandedError = Hint("请输入 # 加 6 位十六进制色值");
         expandedError.Visibility = Visibility.Collapsed;
         expandedCustom.Children.Add(expandedError);
-        stack.Children.Add(expandedCustom);
-        stack.Children.Add(Hint("自动黑白识别窗口明暗；跟随窗口颜色延伸顶部底色。图标自动选黑白，窗口还原后恢复日常玻璃。"));
-        stack.Children.Add(Hint("普通窗口和分屏使用日常玻璃。跟随取色需横向覆盖足够；局部区域或遮挡不会决定整条顶栏的颜色。"));
+        appearance.Children.Add(expandedCustom);
+        appearance.Children.Add(Hint("自动黑白识别窗口明暗；跟随窗口颜色延伸顶部底色。图标自动选黑白，窗口还原后恢复日常玻璃。"));
+        appearance.Children.Add(Hint("普通窗口和分屏使用日常玻璃。跟随取色需横向覆盖足够；局部区域或遮挡不会决定整条顶栏的颜色。"));
         expandedSpeed = Combo("切换速度", "灵敏", "均衡（推荐）", "稳重");
         expandedAnimation = Combo("过渡动画", "标准", "柔和", "关闭");
-        stack.Children.Add(expandedSpeed);
-        stack.Children.Add(expandedAnimation);
-        stack.Children.Add(Hint("灵敏更快跟随窗口；稳重减少颜色波动。系统关闭动画时立即切换。"));
-        stack.Children.Add(Separator());
-        stack.Children.Add(new TextBlock { Text = "日常玻璃外观", FontSize = 19, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
+        appearance.Children.Add(expandedSpeed);
+        appearance.Children.Add(expandedAnimation);
+        appearance.Children.Add(Hint("灵敏更快跟随窗口；稳重减少颜色波动。系统关闭动画时立即切换。"));
+        appearance.Children.Add(Separator());
+        appearance.Children.Add(new TextBlock { Text = "日常玻璃外观", FontSize = 19, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
         preset = Combo("外观预设", "轻透玻璃", "柔和磨砂", "浓厚亚克力", "自定义");
-        stack.Children.Add(preset);
-        stack.Children.Add(Separator());
+        appearance.Children.Add(preset);
+        appearance.Children.Add(Separator());
         basis = Combo("材质基底", "轻薄玻璃", "厚实亚克力", "无基底");
-        stack.Children.Add(basis);
-        stack.Children.Add(Hint("无基底不模糊背景，仅保留染色与明暗遮罩；两项均为 0 时完全透明。"));
-        tint = AddSlider(stack, "染色不透明度", "越低越通透，越高颜色越浓。");
-        luminosity = AddSlider(stack, "明暗遮罩", "调节背景的明暗层次与遮蔽感。");
+        appearance.Children.Add(basis);
+        appearance.Children.Add(Hint("无基底不模糊背景，仅保留染色与明暗遮罩；两项均为 0 时完全透明。"));
+        tint = AddSlider(appearance, "染色不透明度", "越低越通透，越高颜色越浓。");
+        luminosity = AddSlider(appearance, "明暗遮罩", "调节背景的明暗层次与遮蔽感。");
         automatic = new ToggleSwitch { Header = "染色跟随系统明暗", OnContent = "自动配色", OffContent = "自定义颜色" };
         AutomationProperties.SetName(automatic, "染色跟随系统明暗");
-        stack.Children.Add(automatic);
+        appearance.Children.Add(automatic);
         colorSection = new StackPanel { Spacing = 8 };
         colorSection.Children.Add(Hint("关闭自动配色后，可选颜色、调 RGB 或输入 HEX。"));
         colorPreview = new Border { Height = 28, CornerRadius = new CornerRadius(6) };
@@ -148,15 +153,17 @@ internal sealed partial class SettingsWindow : PanelWindow
         green = AddColorSlider(colorSection, "绿 G");
         blue = AddColorSlider(colorSection, "蓝 B");
         colorExpander = new Expander { Header = "自定义染色颜色", Content = colorSection, HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Stretch };
-        stack.Children.Add(colorExpander);
+        appearance.Children.Add(colorExpander);
         line = new ToggleSwitch { Header = "显示顶栏底部分隔线", OnContent = "显示", OffContent = "隐藏" };
         AutomationProperties.SetName(line, "显示顶栏底部分隔线");
-        stack.Children.Add(line);
-        stack.Children.Add(Hint("拖动时顶栏即时预览，停止调节后自动保存。模糊由 Windows 材质控制。"));
+        appearance.Children.Add(line);
+        appearance.Children.Add(Hint("拖动时顶栏即时预览，停止调节后自动保存。模糊由 Windows 材质控制。"));
         var reset = new Button { Content = "重置自定义", HorizontalAlignment = HorizontalAlignment.Left };
         reset.Click += (_, _) => { preferences.Preview(new MaterialOptions()); RefreshStyle(preferences.Style); Preview(); };
-        stack.Children.Add(reset);
-        stack.Children.Add(BuildPersonalPresets());
+        appearance.Children.Add(reset);
+        appearance.Children.Add(BuildPersonalPresets());
+        stack.Children.Add(new Expander { Header = "顶栏外观设置", Content = appearance,
+            HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Stretch });
         var scroll = new ScrollViewer { Content = stack, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, HorizontalContentAlignment = HorizontalAlignment.Stretch };
         Grid.SetRow(scroll, 1); root.Children.Add(scroll);
 
@@ -167,10 +174,10 @@ internal sealed partial class SettingsWindow : PanelWindow
         footer.Children.Add(status);
         var save = new Button { Content = "确定保存", HorizontalAlignment = HorizontalAlignment.Stretch };
         AutomationProperties.SetName(save, "确定保存全部设置");
-        save.Click += (_, _) => FlushChanges(force: true);
+        save.Click += async (_, _) => { if (SaveGuardOptions() && SaveAiSettings(AiCustomSelected) && await SaveStationSettings()) FlushChanges(force: true); };
         footer.Children.Add(save);
         var exit = new Button { Content = "退出留白", HorizontalAlignment = HorizontalAlignment.Stretch };
-        exit.Click += (_, _) => { FlushChanges(); quit(); };
+        exit.Click += async (_, _) => { if (SaveGuardOptions() && SaveAiSettings(AiCustomSelected) && await SaveStationSettings()) { FlushChanges(); quit(); } };
         footer.Children.Add(exit);
         Grid.SetRow(footer, 2); root.Children.Add(footer);
         var surface = new Border { Child = root, CornerRadius = new CornerRadius(12), BorderThickness = new Thickness(0), Background = new SolidColorBrush(Colors.Transparent) };
@@ -409,7 +416,7 @@ internal sealed partial class SettingsWindow : PanelWindow
         ShowPanel();
     }
 
-    protected override void OnHiding() => FlushChanges();
+    protected override void OnHiding() { SaveGuardOptions(); SaveAiSettings(AiCustomSelected); _ = SaveStationSettings(); FlushChanges(); }
     internal void UpdateDisplay(DesktopMonitor monitor)
     { display = monitor; if (IsOpen) Reposition(monitor.Info.Work.Top); }
 }

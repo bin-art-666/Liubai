@@ -16,9 +16,9 @@ try
     var store = new AppearanceStore(path);
     Check(store.ToolbarItems.SequenceEqual(ToolbarOrder.Defaults), "Older configurations use the familiar toolbar order.");
     var normalizedOrder = ToolbarOrder.Normalize(["settings", "unknown", "settings", "clock"]);
-    Check(normalizedOrder.SequenceEqual(new[] { "settings", "clock", "screenshot", "qr", "todo", "note", "station" }), "Unknown or duplicate items cannot hide icons; missing items are appended.");
+    Check(normalizedOrder.SequenceEqual(new[] { "guard", "privacy", "ai", "settings", "clock", "screenshot", "qr", "todo", "note", "station" }), "Unknown or duplicate items cannot hide icons; new controls appear before settings.");
     var movedOrder = ToolbarOrder.Move(ToolbarOrder.Defaults, "settings", 0);
-    Check(movedOrder[0] == "settings" && movedOrder.Length == 7 && movedOrder.Distinct().Count() == 7, "Move first preserves every toolbar item once.");
+    Check(movedOrder[0] == "settings" && movedOrder.Length == 10 && movedOrder.Distinct().Count() == 10, "Move first preserves every toolbar item once.");
     Check(ToolbarOrder.Move(movedOrder, "settings", 99).SequenceEqual(ToolbarOrder.Defaults), "Move last clamps to a valid slot.");
     string orderPath = Path.Combine(directory, "toolbar.json");
     var orderStore = new AppearanceStore(orderPath); int orderEvents = 0; orderStore.ToolbarOrderChanged += () => orderEvents++;

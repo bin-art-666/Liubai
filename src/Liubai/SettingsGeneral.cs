@@ -121,6 +121,8 @@ internal sealed partial class SettingsWindow
         try { startup.IsOn = StartupService.Enabled; startup.IsEnabled = true; } catch { startup.IsEnabled = false; }
         RefreshPersonalPresets();
         RefreshScreenshotSettings();
+        RefreshStationSettings();
+        RefreshGuardSettings();
     }
     bool PrepareSave()
     {

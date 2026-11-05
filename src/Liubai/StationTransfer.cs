@@ -45,7 +45,7 @@ internal static class StationTransfer
             if (view.Contains(StandardDataFormats.StorageItems))
             {
                 var items = await view.GetStorageItemsAsync().AsTask(cancellation);
-                if (items.Count > StationStore.Capacity) throw new InvalidDataException("一次最多存入 30 项，请分批拖入。");
+                if (items.Count > StationStore.MaximumCapacity) throw new InvalidDataException($"一次最多存入 {StationStore.MaximumCapacity} 项，请分批拖入。");
                 var inputs = new List<StationInput>();
                 foreach (var item in items)
                 {

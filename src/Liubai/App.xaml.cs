@@ -32,6 +32,16 @@ public partial class App : Application
     }
     internal static StationStore Station => station ??= new StationStore(Path.Combine(DataDirectory, "station.json"));
     internal static Task FlushStation() => station?.Flush() ?? Task.CompletedTask;
+    static GuardOptionsStore? guardOptions;
+    static GuardService? guard;
+    internal static GuardOptionsStore GuardOptions => guardOptions ??= new(Path.Combine(DataDirectory, "guard.json"));
+    internal static GuardService Guard => guard ??= new(GuardOptions, Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread());
+    internal static Task StopGuard() => guard?.Stop() ?? Task.CompletedTask;
+    static PrivacyService? privacy;
+    internal static PrivacyService Privacy => privacy ??= new(DataDirectory);
+    static AiService? ai;
+    internal static AiService Ai => ai ??= new(DataDirectory);
+    internal static void StopAi() => ai?.Stop();
     internal static PlannerStore Planner => planner ??= new PlannerStore(Path.Combine(DataDirectory, "planner.json"));
     static ScreenshotOptionsStore? screenshots;
     internal static ScreenshotOptionsStore Screenshots => screenshots ??= new(Path.Combine(DataDirectory, "screenshot.json"));
@@ -57,6 +67,12 @@ public partial class App : Application
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
         var arguments = Environment.GetCommandLineArgs();
+        int workerIndex = Array.IndexOf(arguments, "--privacy-worker");
+        if (workerIndex >= 0)
+        {
+            Environment.ExitCode = workerIndex + 1 < arguments.Length ? PrivacyService.Worker(arguments[workerIndex + 1]) : 2;
+            Exit(); return;
+        }
         int index = Array.IndexOf(arguments, "--data-dir");
         DataDirectory = index >= 0 && index + 1 < arguments.Length
             ? Path.GetFullPath(arguments[index + 1])
@@ -67,7 +83,7 @@ public partial class App : Application
         if (!first) { if (startupLaunch) StartupService.Log("already-running"); Exit(); return; }
         if (index < 0 && !arguments.Any(a => a.StartsWith("--verify-", StringComparison.Ordinal))) StartupService.RefreshExistingPath();
         var preferences = new AppearanceStore(Path.Combine(DataDirectory, "appearance.json"));
-        if (arguments.Contains("--verify-toolbar") || arguments.Contains("--verify-expanded") || arguments.Contains("--verify-shell") || arguments.Contains("--verify-planner") || arguments.Contains("--verify-reminders") || arguments.Contains("--verify-screenshot") || arguments.Contains("--verify-qr") || arguments.Contains("--verify-station") || arguments.Contains("--verify-clock"))
+        if (arguments.Contains("--verify-station-browser") || arguments.Contains("--verify-station-size") || arguments.Contains("--verify-ai-panel") || arguments.Contains("--verify-privacy") || arguments.Contains("--verify-guard") || arguments.Contains("--verify-toolbar") || arguments.Contains("--verify-expanded") || arguments.Contains("--verify-shell") || arguments.Contains("--verify-planner") || arguments.Contains("--verify-reminders") || arguments.Contains("--verify-screenshot") || arguments.Contains("--verify-qr") || arguments.Contains("--verify-station") || arguments.Contains("--verify-clock"))
         {
             verificationBar = new BarWindow(preferences);
             verificationBar.Start(arguments.Contains("--show-settings"));

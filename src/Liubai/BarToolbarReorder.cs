@@ -24,7 +24,7 @@ public sealed partial class BarWindow
     void InitializeToolbarReorder(Grid layers)
     {
         toolbarLayers = layers;
-        Button[] buttons = [screenshot, qrScan, clockButton, todo, quickNote, shelf, settings];
+        Button[] buttons = [screenshot, qrScan, clockButton, todo, quickNote, shelf, guardButton, privacyButton, aiButton, settings];
         for (int i = 0; i < buttons.Length; i++)
         {
             var button = buttons[i]; toolbarButtons.Add(ToolbarOrder.Defaults[i], button);

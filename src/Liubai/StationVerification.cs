@@ -79,6 +79,8 @@ public sealed partial class BarWindow
             stationWindow.ConfirmDrop(); await Task.Delay(500);
             if (!stationWindow.IsOpen) throw new Exception("Successful incoming drop did not remain open");
             checks.Add("Successful incoming drop stays open after source-activation grace period; foreground activation also requested");
+            await VerifyStationAppearance(checks);
+            await VerifyStationOptions(checks);
             if (Environment.GetCommandLineArgs().Contains("--preview-station"))
             {
                 // Allow a human/UI driver to give this background-launched verification

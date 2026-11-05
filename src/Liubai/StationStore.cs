@@ -5,19 +5,24 @@ namespace Liubai;
 internal enum StationKind { File, Folder, Text, Link }
 internal sealed record StationInput(StationKind Kind, string Value, string Title = "");
 internal sealed record StationItem(Guid Id, StationKind Kind, string Value, string Title, DateTimeOffset Created);
-internal sealed record StationDocument(int Version, StationItem[] Items);
+internal sealed record StationDocument(int Version, StationItem[] Items, int Capacity = StationStore.DefaultCapacity, string ArchiveDirectory = "", bool RemoveAfterArchive = true);
 internal sealed record StationAddResult(int Added, int Duplicates);
 
 // Only references and text are stored. No operation in this store touches source files.
 internal sealed class StationStore
 {
-    internal const int Capacity = 30, MaximumText = 20000;
+    internal const int DefaultCapacity = 200, MaximumCapacity = 2000, MaximumText = 20000;
+    const long MaximumDocumentBytes = 256L * 1024 * 1024;
     readonly string path;
     readonly SemaphoreSlim gate = new(1, 1);
     StationDocument data = new(1, []);
     bool preserveBackup;
     internal IReadOnlyList<StationItem> Items => Array.AsReadOnly(data.Items);
+    internal int Capacity => data.Capacity;
+    internal string ArchiveDirectory => data.ArchiveDirectory;
+    internal bool RemoveAfterArchive => data.RemoveAfterArchive;
     internal string AttachmentDirectory => Path.Combine(Path.GetDirectoryName(path)!, "station-files");
+    internal string WindowLayoutPath => Path.Combine(Path.GetDirectoryName(path)!, "station-window.json");
     internal bool ReadOnly { get; }
     internal string? LoadWarning { get; }
     internal event Action? Changed;
@@ -37,7 +42,7 @@ internal sealed class StationStore
     }
     static StationDocument Read(string path)
     {
-        if (new FileInfo(path).Length > 4 * 1024 * 1024) throw new InvalidDataException("中转站文件过大。");
+        if (new FileInfo(path).Length > MaximumDocumentBytes) throw new InvalidDataException("中转站文件过大。");
         var value = JsonSerializer.Deserialize<StationDocument>(File.ReadAllText(path)) ?? throw new InvalidDataException("内容为空。");
         if (value.Version != 1) throw new NotSupportedException();
         Validate(value); return value;
@@ -63,7 +68,9 @@ internal sealed class StationStore
         ? "path:" + value.ToUpperInvariant() : kind + ":" + value;
     static void Validate(StationDocument document)
     {
-        if (document.Items == null || document.Items.Length > Capacity) throw new InvalidDataException("中转站条目无效。");
+        if (document.Items == null || document.Items.Length > MaximumCapacity || document.Capacity is < 1 or > MaximumCapacity
+            || document.ArchiveDirectory is null || document.ArchiveDirectory.Length > 32767
+            || document.ArchiveDirectory.Length > 0 && (!Path.IsPathFullyQualified(document.ArchiveDirectory) || document.ArchiveDirectory.Any(char.IsControl))) throw new InvalidDataException("中转站条目或设置无效。");
         var ids = new HashSet<Guid>(); var keys = new HashSet<string>(StringComparer.Ordinal);
         foreach (var item in document.Items)
         {
@@ -88,7 +95,7 @@ internal sealed class StationStore
                     using (var stream = new FileStream(path + ".tmp", FileMode.Create, FileAccess.Write, FileShare.None))
                     {
                         JsonSerializer.Serialize(stream, next);
-                        if (stream.Length > 4 * 1024 * 1024) throw new InvalidDataException("中转站内容过大。");
+                        if (stream.Length > MaximumDocumentBytes) throw new InvalidDataException("中转站内容过大。");
                         stream.Flush(true);
                     }
                     if (File.Exists(path)) File.Replace(path + ".tmp", path, preserveBackup ? null : path + ".bak");
@@ -103,8 +110,8 @@ internal sealed class StationStore
     }
     internal async Task<StationAddResult> Add(IEnumerable<StationInput> values)
     {
-        var inputs = values.Take(Capacity + 1).Select(Normalize).ToArray();
-        if (inputs.Length > Capacity) throw new InvalidDataException("一次最多存入 30 项，请分批拖入。");
+        var inputs = values.Take(MaximumCapacity + 1).Select(Normalize).ToArray();
+        if (inputs.Length > MaximumCapacity) throw new InvalidDataException($"一次最多存入 {MaximumCapacity} 项，请分批拖入。");
         StationAddResult result = new(0, 0);
         await Change(document =>
         {
@@ -115,7 +122,7 @@ internal sealed class StationStore
                 if (!keys.Add(Key(input.Kind, input.Value))) { duplicates++; continue; }
                 additions.Add(new(Guid.NewGuid(), input.Kind, input.Value, input.Title, DateTimeOffset.Now));
             }
-            if (document.Items.Length + additions.Count > Capacity) throw new InvalidDataException($"中转站最多 30 项，目前还可存 {Capacity - document.Items.Length} 项；本批未存入，请先整理。");
+            if (additions.Count > 0 && document.Items.Length + additions.Count > document.Capacity) throw new InvalidDataException($"中转站上限 {document.Capacity} 项，目前还可存 {Math.Max(0, document.Capacity - document.Items.Length)} 项；本批未存入，请先整理或归档。");
             result = new(additions.Count, duplicates);
             return additions.Count == 0 ? document : document with { Items = [.. document.Items, .. additions] };
         });
@@ -123,5 +130,23 @@ internal sealed class StationStore
     }
     internal Task Remove(Guid id) => Change(d => d.Items.Any(i => i.Id == id) ? d with { Items = d.Items.Where(i => i.Id != id).ToArray() } : d);
     internal Task Clear() => Change(d => d.Items.Length == 0 ? d : d with { Items = [] });
+    internal Task UpdateOptions(int capacity, string archiveDirectory, bool removeAfterArchive)
+    {
+        if (capacity is < 1 or > MaximumCapacity) throw new ArgumentException($"保存数量应为 1～{MaximumCapacity} 项。");
+        if (!string.IsNullOrWhiteSpace(archiveDirectory) && (!Path.IsPathFullyQualified(archiveDirectory) || archiveDirectory.Any(char.IsControl))) throw new ArgumentException("请选择有效的完整归档路径。");
+        string directory = string.IsNullOrWhiteSpace(archiveDirectory) ? "" : Path.GetFullPath(archiveDirectory);
+        return Change(d => d.Capacity == capacity && d.ArchiveDirectory == directory && d.RemoveAfterArchive == removeAfterArchive
+            ? d : d with { Capacity = capacity, ArchiveDirectory = directory, RemoveAfterArchive = removeAfterArchive });
+    }
+    internal async Task<int> RemoveArchived(IEnumerable<StationItem> archived)
+    {
+        var verified = archived.ToHashSet(); int removed = 0;
+        await Change(d =>
+        {
+            var remaining = d.Items.Where(i => !verified.Contains(i)).ToArray(); removed = d.Items.Length - remaining.Length;
+            return removed == 0 ? d : d with { Items = remaining };
+        });
+        return removed;
+    }
     internal async Task Flush() { await gate.WaitAsync(); gate.Release(); }
 }

@@ -62,6 +62,7 @@ public sealed partial class BarWindow
     bool OpenClock(Guid? id = null)
     {
         if (closing || openingPlanner || PanelModal || manager?.HasModal == true || manager?.Suspended == true || !Native.MonitorExists(Display.Handle)) return false;
+        App.Ai.Hide(false);
         settingsWindow?.Hide(); plannerWindow?.Hide(); qrResults?.Hide(); stationWindow?.HideDocked(); stationHoverTimer?.Stop(); manager?.HideOtherPanels(this);
         clockWindow ??= new ClockWindow(App.Clock, Display);
         clockWindow.Open(Display, windowShown ? AppWindow.Position.Y + AppWindow.Size.Height : Display.Info.Work.Top, id);

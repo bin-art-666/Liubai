@@ -11,6 +11,10 @@ internal abstract class PanelWindow : Window
     bool closed;
     int modalDepth;
     OutsideClickWatcher? outsideClicks;
+    PanelCaption? caption;
+    protected void InitializeFloatingCaption(FrameworkElement header, FrameworkElement controls, Func<bool> enabled) => caption = new(this, header, controls, enabled);
+    protected void UpdateFloatingCaption() => caption?.Refresh();
+    internal Task VerifyFloatingCaption(bool enabled) => caption?.Verify(enabled) ?? throw new InvalidOperationException("Caption not initialized");
     internal bool IsOpen { get; private set; }
     internal bool ModalActive => modalDepth > 0;
     protected virtual bool DismissOnOutside => true;
@@ -31,7 +35,7 @@ internal abstract class PanelWindow : Window
             });
         };
         AppWindow.Closing += (_, args) => { if (!closed) { args.Cancel = true; Hide(); } };
-        Closed += (_, _) => { closed = true; IsOpen = false; activationVersion++; outsideClicks?.Dispose(); };
+        Closed += (_, _) => { closed = true; IsOpen = false; activationVersion++; outsideClicks?.Dispose(); caption?.Dispose(); };
     }
 
     protected void InitializePanel(FrameworkElement content)
@@ -55,6 +59,7 @@ internal abstract class PanelWindow : Window
         AppWindow.Show(false);
         if (activate) Activate();
         if (Frameless) Native.RemoveWindowFrame(WinRT.Interop.WindowNative.GetWindowHandle(this));
+        caption?.Queue();
         outsideClicks?.Dispose();
         outsideClicks = new OutsideClickWatcher(WinRT.Interop.WindowNative.GetWindowHandle(this), DispatcherQueue,
             () => { if (modalDepth == 0 && DismissOnOutside) Hide(); });
