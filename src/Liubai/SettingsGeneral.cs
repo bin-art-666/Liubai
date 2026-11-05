@@ -51,7 +51,7 @@ internal sealed partial class SettingsWindow
         {
             using var lease = KeepOpen();
             var confirm = new ContentDialog { XamlRoot = ((FrameworkElement)Content).XamlRoot,
-                Title = "恢复默认设置？", Content = "恢复默认外观、36 像素高度及所有屏幕显示，并恢复颜色跟随。个人预设和开机启动选择会保留。",
+                Title = "恢复默认设置？", Content = "恢复默认外观、字号、图标顺序、36 像素高度及所有屏幕显示，并恢复颜色跟随。个人预设和开机启动选择会保留。",
                 PrimaryButtonText = "恢复默认", CloseButtonText = "取消", DefaultButton = ContentDialogButton.Close };
             if (await confirm.ShowAsync() != ContentDialogResult.Primary) return;
             try

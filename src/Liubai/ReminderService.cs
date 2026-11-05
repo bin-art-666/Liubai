@@ -6,7 +6,7 @@ using Microsoft.Windows.AppLifecycle;
 
 namespace Liubai;
 
-internal sealed class WindowsReminderNotifications : IReminderNotifications, IDisposable
+internal sealed partial class WindowsReminderNotifications : IReminderNotifications, IClockNotifications, IDisposable
 {
     readonly string group;
     AppNotificationManager? manager;
@@ -20,7 +20,7 @@ internal sealed class WindowsReminderNotifications : IReminderNotifications, IDi
     {
         try
         {
-            if (!AppNotificationManager.IsSupported()) { Warning = "此环境暂不支持 Windows 通知。任务会继续保存。"; return; }
+            if (!AppNotificationManager.IsSupported()) { Warning = "此环境暂不支持 Windows 通知，提醒内容会继续保存。"; return; }
             manager = AppNotificationManager.Default;
             manager.NotificationInvoked += Invoked;
             manager.Register("留白", new Uri(Path.Combine(AppContext.BaseDirectory, "Assets", "Liubai.ico")));
@@ -65,7 +65,12 @@ internal sealed class WindowsReminderNotifications : IReminderNotifications, IDi
     public Task<bool> Show(TodoItem item, DateTimeOffset now)
     {
         if (!CheckSetting() || manager == null) return Task.FromResult(false);
-        var notification = new AppNotification(ReminderPolicy.Payload(item, now, TimeZoneInfo.Local))
+        string payload = ReminderPolicy.Payload(item, now, TimeZoneInfo.Local);
+        if (group == "Liubai.Test")
+        {
+            var xml = XDocument.Parse(payload); xml.Root!.Add(new XElement("audio", new XAttribute("silent", true))); payload = xml.ToString(SaveOptions.DisableFormatting);
+        }
+        var notification = new AppNotification(payload)
         { Tag = ReminderPolicy.Tag(item.Id), Group = group, Expiration = now.AddDays(3) };
         manager.Show(notification);
         bool accepted = notification.Id != 0;
@@ -99,16 +104,18 @@ internal sealed class ReminderService
     string? lastWarning, error, lastSchedule;
     internal string? Warning => error ?? notifications.Warning;
     internal string? Diagnostic => notifications.Diagnostic;
+    internal IClockNotifications ClockNotifications => notifications;
     internal event Action? StatusChanged;
-    internal ReminderService(PlannerStore store, DispatcherQueue dispatcher, Func<Guid, bool> tryOpen, bool verification = false)
+    internal ReminderService(PlannerStore store, DispatcherQueue dispatcher, Func<Guid, bool> tryOpen, bool verification = false, bool initiallySuspended = false)
     {
         this.store = store; this.dispatcher = dispatcher; this.tryOpen = tryOpen;
+        suspended = initiallySuspended;
         notifications = new WindowsReminderNotifications(argument => dispatcher.TryEnqueue(() => _ = Handle(argument)), verification);
         coordinator = new ReminderCoordinator(store, notifications, id => pendingOpen = id, () => !stopped && !suspended);
         timer = dispatcher.CreateTimer(); timer.Interval = TimeSpan.FromSeconds(5);
         timer.Tick += (_, _) => Wake(); store.Changed += StoreChanged;
         lastSchedule = ReminderPolicy.ScheduleKey(store.Data.Tasks);
-        notifications.Register(); timer.Start(); Wake();
+        notifications.Register(); if (!suspended) timer.Start(); Wake();
     }
     void StoreChanged() => dispatcher.TryEnqueue(() =>
     {
@@ -146,6 +153,7 @@ internal sealed class ReminderService
     }
     async Task Handle(string argument)
     {
+        if (argument.StartsWith("clock|", StringComparison.Ordinal)) { App.DispatchClockAction(argument); return; }
         if (stopped || !ReminderPolicy.TryParse(argument, out var action)) return;
         try { await coordinator.Handle(action, DateTimeOffset.Now); error = null; Wake(); }
         catch (Exception ex) when (ex is COMException or IOException or InvalidDataException or UnauthorizedAccessException or InvalidOperationException)

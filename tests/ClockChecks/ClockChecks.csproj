@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable></PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../src/Liubai/ClockPolicy.cs" Link="ClockPolicy.cs" />
+    <Compile Include="../../src/Liubai/ClockStore.cs" Link="ClockStore.cs" />
+    <Compile Include="../../src/Liubai/SessionState.cs" Link="SessionState.cs" />
+  </ItemGroup>
+</Project>

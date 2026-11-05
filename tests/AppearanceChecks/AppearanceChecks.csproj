@@ -7,6 +7,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="../../src/Liubai/AppearanceStore.cs" Link="AppearanceStore.cs" />
+    <Compile Include="../../src/Liubai/ToolbarOrder.cs" Link="ToolbarOrder.cs" />
     <Compile Include="../../src/Liubai/ExpandedAppearance.cs" Link="ExpandedAppearance.cs" />
     <Compile Include="../../src/Liubai/ExpandedWindowPolicy.cs" Link="ExpandedWindowPolicy.cs" />
     <Compile Include="../../src/Liubai/ExpandedColorPolicy.cs" Link="ExpandedColorPolicy.cs" />

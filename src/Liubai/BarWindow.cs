@@ -14,7 +14,7 @@ public sealed partial class BarWindow : Window
     readonly BarManager? manager;
     internal DesktopMonitor Display { get; private set; }
     readonly Border surface;
-    readonly Button settings, shelf, todo, quickNote, screenshot, qrScan;
+    readonly Button settings, shelf, todo, quickNote, screenshot, qrScan, clockButton;
     readonly ToolTip screenshotTip;
     readonly Microsoft.UI.Dispatching.DispatcherQueueTimer screenshotTipTimer;
     readonly StackPanel actions;
@@ -67,6 +67,7 @@ public sealed partial class BarWindow : Window
         qrScan.Content = CreateVectorIcon(qrScan,
             "M 8 3 L 3 3 L 3 8 M 16 3 L 21 3 L 21 8 M 3 16 L 3 21 L 8 21 M 21 16 L 21 21 L 16 21 "
             + "M 7 7 L 10 7 L 10 10 L 7 10 Z M 14 7 L 17 7 L 17 10 L 14 10 Z M 7 14 L 10 14 L 10 17 L 7 17 Z M 14 14 L 17 14 L 17 17 M 14 17 L 14 19 M 19 12 L 19 14", "1.4");
+        clockButton = CreateToolbarButton(null, "时钟"); InitializeClockToolbar();
         todo = CreateToolbarButton(null, "待办");
         todo.Content = CreateVectorIcon(todo,
             "M 8 5 L 6 5 C 4.9 5 4 5.9 4 7 L 4 19 C 4 20.1 4.9 21 6 21 L 18 21 C 19.1 21 20 20.1 20 19 L 20 7 C 20 5.9 19.1 5 18 5 L 16 5 "
@@ -86,6 +87,7 @@ public sealed partial class BarWindow : Window
         };
         actions.Children.Add(screenshot);
         actions.Children.Add(qrScan);
+        actions.Children.Add(clockButton);
         actions.Children.Add(todo);
         actions.Children.Add(quickNote);
         actions.Children.Add(shelf);
@@ -95,11 +97,12 @@ public sealed partial class BarWindow : Window
         transition = new BarAppearanceTransition(cover);
         var layers = new Grid(); layers.Children.Add(surface); layers.Children.Add(cover);
         Content = layers;
-        settings.Click += (_, _) => ToggleSettings();
-        todo.Click += (_, _) => OpenPlanner(PlannerPage.Tasks);
-        quickNote.Click += (_, _) => OpenPlanner(PlannerPage.Notes);
-        screenshot.Click += async (_, _) => await TakeScreenshot();
-        qrScan.Click += async (_, _) => await ScanQr();
+        InitializeToolbarReorder(layers);
+        settings.Click += (_, _) => { if (!ToolbarClickBlocked) ToggleSettings(); };
+        todo.Click += (_, _) => { if (!ToolbarClickBlocked) OpenPlanner(PlannerPage.Tasks); };
+        quickNote.Click += (_, _) => { if (!ToolbarClickBlocked) OpenPlanner(PlannerPage.Notes); };
+        screenshot.Click += async (_, _) => { if (!ToolbarClickBlocked) await TakeScreenshot(); };
+        qrScan.Click += async (_, _) => { if (!ToolbarClickBlocked) await ScanQr(); };
         surface.ActualThemeChanged += (_, _) =>
         {
             if (!transition.Active && !expandedSnapshot.UsesSolid(preferences.Expanded)) UpdateSurface();
@@ -187,13 +190,15 @@ public sealed partial class BarWindow : Window
             if (surface.IsLoaded) OpenSettings();
             else surface.Loaded += ShowSettingsOnLoad;
         }
-        if (Environment.GetCommandLineArgs().Contains("--verify-expanded")) _ = VerifyExpanded();
+        if (Environment.GetCommandLineArgs().Contains("--verify-toolbar")) _ = VerifyToolbar();
+        else if (Environment.GetCommandLineArgs().Contains("--verify-expanded")) _ = VerifyExpanded();
         else if (Environment.GetCommandLineArgs().Contains("--verify-shell")) _ = VerifyShell();
         else if (Environment.GetCommandLineArgs().Contains("--verify-planner")) _ = VerifyPlanner();
         else if (Environment.GetCommandLineArgs().Contains("--verify-reminders")) _ = VerifyReminders();
         else if (Environment.GetCommandLineArgs().Contains("--verify-screenshot")) _ = VerifyScreenshot();
         else if (Environment.GetCommandLineArgs().Contains("--verify-qr")) _ = VerifyQr();
         else if (Environment.GetCommandLineArgs().Contains("--verify-station")) _ = VerifyStation();
+        else if (Environment.GetCommandLineArgs().Contains("--verify-clock")) _ = VerifyClock();
     }
 
     async void Quit()
@@ -201,6 +206,8 @@ public sealed partial class BarWindow : Window
         if (manager != null) manager.Quit();
         else if (await FlushPlanner())
         {
+            if (!await ConfirmClockQuit()) return;
+            if (App.Clocks != null) await App.Clocks.Stop();
             if (App.Reminders != null) await App.Reminders.Stop();
             await ScreenshotService.Flush();
             await App.FlushStation();
@@ -210,8 +217,10 @@ public sealed partial class BarWindow : Window
     internal void Shutdown()
     {
         if (closing) return;
+        FinishToolbarDrag(false); preferences.ToolbarOrderChanged -= ToolbarOrderChanged;
         closing = true; QrSelectionWindow.CancelActive(); qrResults?.Destroy(); if (qrTip != null) qrTip.IsOpen = false;
         stationHoverTimer?.Stop(); stationWindow?.Destroy();
+        clockBadgeTimer?.Stop(); App.Clock.Changed -= ClockChanged; preferences.ClockFontSizeChanged -= ClockChanged; clockWindow?.Destroy();
         screenshotTipTimer.Stop(); screenshotTip.IsOpen = false;
         transition.Cancel(); appearanceMonitor?.Dispose(); tray?.Dispose(); tray = null;
         settingsWindow?.Destroy(); if (manager == null) plannerWindow?.Destroy();
@@ -223,13 +232,13 @@ public sealed partial class BarWindow : Window
         tray ??= new TrayIcon(handle, DispatcherQueue, OpenSettings, ToggleBar, () => barVisible,
             () => preferences.Style, SetStyle, Quit, () => preferences.FollowPaused,
             () => { if (manager != null) manager.TogglePause(); else { preferences.SetFollowPaused(!preferences.FollowPaused); preferences.SaveCurrent(); ApplyExpanded(); } },
-            () => OpenPlanner(PlannerPage.Tasks), () => OpenPlanner(PlannerPage.Notes), () => OpenStation());
+            () => OpenPlanner(PlannerPage.Tasks), () => OpenPlanner(PlannerPage.Notes), () => OpenStation(), () => OpenClock());
     }
     internal void UpdateDisplay(DesktopMonitor display)
     {
         bool changed = Display != display;
         Display = display; UpdateTray();
-        if (changed) { transition.Cancel(); Position(); appearanceMonitor?.Refresh(); settingsWindow?.UpdateDisplay(display); stationWindow?.UpdateDisplay(display); }
+        if (changed) { transition.Cancel(); Position(); appearanceMonitor?.Refresh(); settingsWindow?.UpdateDisplay(display); stationWindow?.UpdateDisplay(display); clockWindow?.UpdateDisplay(display); }
     }
     internal void RefreshMaterial() => ApplyGlass();
     internal void RefreshEnvironment()
@@ -246,9 +255,9 @@ public sealed partial class BarWindow : Window
     internal int SampleCount => appearanceMonitor?.SampleCount ?? 0;
     internal bool TrayRegistered => tray?.IsRegistered == true;
     internal Windows.Graphics.RectInt32 BarRectangle => new(AppWindow.Position.X, AppWindow.Position.Y, AppWindow.Size.Width, AppWindow.Size.Height);
-    internal void HidePanels(bool includeDetached = true) { settingsWindow?.Hide(); plannerWindow?.Hide(); qrResults?.Hide(); if (includeDetached) stationWindow?.Hide(); else stationWindow?.HideDocked(); stationHoverTimer?.Stop(); }
+    internal void HidePanels(bool includeDetached = true) { settingsWindow?.Hide(); plannerWindow?.Hide(); qrResults?.Hide(); clockWindow?.Hide(); if (includeDetached) stationWindow?.Hide(); else stationWindow?.HideDocked(); stationHoverTimer?.Stop(); }
     internal Task<bool> FlushPlanner() => plannerWindow?.FlushAsync() ?? Task.FromResult(true);
-    internal bool PanelModal => QrSelectionWindow.Active || stationWindow?.ModalActive == true || qrResults?.ModalActive == true || settingsWindow?.ModalActive == true || plannerWindow?.ModalActive == true;
+    internal bool PanelModal => QrSelectionWindow.Active || clockWindow?.ModalActive == true || stationWindow?.ModalActive == true || qrResults?.ModalActive == true || settingsWindow?.ModalActive == true || plannerWindow?.ModalActive == true;
     internal void RequestSettings()
     {
         if (surface.IsLoaded) OpenSettings(); else surface.Loaded += ShowSettingsOnLoad;
@@ -348,7 +357,7 @@ public sealed partial class BarWindow : Window
         {
             transition.Cancel();
             if (show) { Position(); AppWindow.Show(false); Native.RemoveWindowFrame(handle); }
-            else AppWindow.Hide();
+            else { FinishToolbarDrag(false); AppWindow.Hide(); }
             windowShown = show;
         }
         if (show && fullscreen) Native.KeepOnTop(handle);
@@ -363,6 +372,7 @@ public sealed partial class BarWindow : Window
     void OpenSettings()
     {
         if (PanelModal || manager?.HasModal == true) return;
+        clockWindow?.Hide();
         stationWindow?.HideDocked(); stationHoverTimer?.Stop();
         qrResults?.Hide();
         plannerWindow?.Hide();
@@ -378,6 +388,7 @@ public sealed partial class BarWindow : Window
     async void OpenPlanner(PlannerPage page)
     {
         if (openingPlanner || closing || PanelModal || manager?.HasModal == true) return;
+        clockWindow?.Hide();
         stationWindow?.HideDocked(); stationHoverTimer?.Stop();
         qrResults?.Hide();
         if (plannerWindow?.IsOpen == true && plannerWindow.Page == page && plannerWindow.DisplayDevice == Display.Device)
@@ -402,6 +413,7 @@ public sealed partial class BarWindow : Window
         try
         {
             qrResults?.Hide();
+            clockWindow?.Hide();
             stationWindow?.HideDocked(); stationHoverTimer?.Stop();
             settingsWindow?.Hide(); manager?.HideOtherPanels(this);
             plannerWindow ??= manager?.GetPlanner(Display) ?? new PlannerWindow(App.Planner, Display);

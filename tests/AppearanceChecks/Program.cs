@@ -14,6 +14,45 @@ try
 {
     File.WriteAllText(path, "{\"Style\":0}");
     var store = new AppearanceStore(path);
+    Check(store.ToolbarItems.SequenceEqual(ToolbarOrder.Defaults), "Older configurations use the familiar toolbar order.");
+    var normalizedOrder = ToolbarOrder.Normalize(["settings", "unknown", "settings", "clock"]);
+    Check(normalizedOrder.SequenceEqual(new[] { "settings", "clock", "screenshot", "qr", "todo", "note", "station" }), "Unknown or duplicate items cannot hide icons; missing items are appended.");
+    var movedOrder = ToolbarOrder.Move(ToolbarOrder.Defaults, "settings", 0);
+    Check(movedOrder[0] == "settings" && movedOrder.Length == 7 && movedOrder.Distinct().Count() == 7, "Move first preserves every toolbar item once.");
+    Check(ToolbarOrder.Move(movedOrder, "settings", 99).SequenceEqual(ToolbarOrder.Defaults), "Move last clamps to a valid slot.");
+    string orderPath = Path.Combine(directory, "toolbar.json");
+    var orderStore = new AppearanceStore(orderPath); int orderEvents = 0; orderStore.ToolbarOrderChanged += () => orderEvents++;
+    orderStore.SaveToolbarOrder(movedOrder);
+    Check(orderEvents == 1 && new AppearanceStore(orderPath).ToolbarItems.SequenceEqual(movedOrder), "Saved order publishes after persistence and restores on restart.");
+    orderStore.SavePreset("保持图标顺序"); orderStore.ApplyPreset(orderStore.Presets.Single().Id);
+    Check(orderStore.ToolbarItems.SequenceEqual(movedOrder), "Material presets preserve toolbar layout.");
+    string orderExport = Path.Combine(directory, "toolbar-export.json"); orderStore.Export(orderExport);
+    var orderImport = new AppearanceStore(Path.Combine(directory, "toolbar-import.json")); orderImport.Import(orderExport);
+    Check(orderImport.ToolbarItems.SequenceEqual(movedOrder), "Layout follows configuration export/import.");
+    orderStore.ResetDefaults(); Check(orderStore.ToolbarItems.SequenceEqual(ToolbarOrder.Defaults), "Full reset restores default toolbar order.");
+    Check(store.ClockFontSize == AppearanceStore.DefaultClockFontSize, "Older configurations default to the moderate clock font size.");
+    string fontPath = Path.Combine(directory, "clock-font.json");
+    var fontStore = new AppearanceStore(fontPath);
+    int fontChanges = 0; fontStore.ClockFontSizeChanged += () => fontChanges++;
+    fontStore.SetClockFontSize(14);
+    Check(fontStore.ClockFontSize == 14 && fontChanges == 1 && !File.Exists(fontPath), "Clock font previews live without writing on every slider movement.");
+    fontStore.SaveCurrent();
+    Check(new AppearanceStore(fontPath).ClockFontSize == 14, "Clock font survives restart.");
+    string fontExport = Path.Combine(directory, "clock-font-export.json"); fontStore.Export(fontExport);
+    var fontImport = new AppearanceStore(Path.Combine(directory, "clock-font-import.json")); fontImport.Import(fontExport);
+    Check(fontImport.ClockFontSize == 14, "Clock font follows appearance export and import.");
+    fontStore.SetClockFontSize(AppearanceStore.MaximumClockFontSize);
+    fontStore.SetClockFontSize(AppearanceStore.MinimumClockFontSize);
+    foreach (int size in new[] { AppearanceStore.MinimumClockFontSize - 1, AppearanceStore.MaximumClockFontSize + 1 })
+    {
+        bool rejected = false; try { fontStore.SetClockFontSize(size); } catch (ArgumentOutOfRangeException) { rejected = true; }
+        Check(rejected && fontStore.ClockFontSize == AppearanceStore.MinimumClockFontSize, "Invalid font size cannot change the preview.");
+    }
+    string badFont = Path.Combine(directory, "bad-font.json"); File.WriteAllText(badFont, "{\"ClockFontSize\":100}");
+    bool badFontRejected = false; try { fontStore.Import(badFont); } catch (InvalidDataException) { badFontRejected = true; }
+    Check(badFontRejected && fontStore.ClockFontSize == AppearanceStore.MinimumClockFontSize, "Invalid imported font is rejected atomically.");
+    fontStore.ResetDefaults();
+    Check(new AppearanceStore(fontPath).ClockFontSize == AppearanceStore.DefaultClockFontSize, "Default reset restores the moderate clock font size.");
     Check(store.Style == GlassStyle.Light && store.Material.Thin && store.Material.TintOpacity == .08f,
         "Legacy preset must retain its original appearance.");
     var custom = new MaterialOptions(true, .37f, .63f, false, "#7CAEDD", false);

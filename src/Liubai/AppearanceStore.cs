@@ -37,14 +37,20 @@ public sealed record PersonalPreset(string Id, string Name, GlassStyle Style, Ma
 
 internal sealed record AppearanceConfiguration(GlassStyle Style = GlassStyle.Frosted, MaterialOptions? Custom = null,
     int BarHeight = AppearanceStore.DefaultHeight, ExpandedAppearanceOptions? Expanded = null,
-    bool AllDisplays = true, bool FollowPaused = false, PersonalPreset[]? Presets = null, int Version = 1);
+    bool AllDisplays = true, bool FollowPaused = false, PersonalPreset[]? Presets = null, int Version = 1,
+    int ClockFontSize = AppearanceStore.DefaultClockFontSize, string[]? ToolbarOrder = null);
 
 public sealed class AppearanceStore
 {
     public const int DefaultHeight = 36, MinimumHeight = 1, MaximumHeight = 120;
+    public const int DefaultClockFontSize = 18, MinimumClockFontSize = 12, MaximumClockFontSize = 26;
     readonly string path;
     public GlassStyle Style { get; private set; } = GlassStyle.Frosted;
     public int BarHeight { get; private set; } = DefaultHeight;
+    public int ClockFontSize { get; private set; } = DefaultClockFontSize;
+    public event Action? ClockFontSizeChanged;
+    public IReadOnlyList<string> ToolbarItems { get; private set; } = Array.AsReadOnly(ToolbarOrder.Normalize(null));
+    public event Action? ToolbarOrderChanged;
     public MaterialOptions Custom { get; private set; } = new();
     public ExpandedAppearanceOptions Expanded { get; private set; } = new();
     public bool AllDisplays { get; private set; } = true;
@@ -64,12 +70,19 @@ public sealed class AppearanceStore
 
     void Apply(AppearanceConfiguration saved)
     {
+        bool fontChanged = ClockFontSize != saved.ClockFontSize;
+        var order = ToolbarOrder.Normalize(saved.ToolbarOrder);
+        bool orderChanged = !ToolbarItems.SequenceEqual(order);
         Style = saved.Style;
         Custom = saved.Custom ?? new();
         BarHeight = saved.BarHeight;
+        ClockFontSize = saved.ClockFontSize;
         Expanded = saved.Expanded ?? new();
         AllDisplays = saved.AllDisplays; FollowPaused = saved.FollowPaused;
         Presets = Array.AsReadOnly(saved.Presets ?? []);
+        ToolbarItems = Array.AsReadOnly(order);
+        if (fontChanged) ClockFontSizeChanged?.Invoke();
+        if (orderChanged) ToolbarOrderChanged?.Invoke();
     }
 
     static AppearanceConfiguration Read(string path)
@@ -84,6 +97,8 @@ public sealed class AppearanceStore
     {
         bool valid = value != null && value.Version == 1 && Enum.IsDefined(value.Style) && (value.Custom == null || value.Custom.IsValid)
             && value.BarHeight is >= MinimumHeight and <= MaximumHeight
+            && value.ClockFontSize is >= MinimumClockFontSize and <= MaximumClockFontSize
+            && (value.ToolbarOrder == null || value.ToolbarOrder.Length <= 64)
             && (value.Expanded == null || value.Expanded.IsValid);
         var presets = value?.Presets ?? [];
         valid &= presets.Length <= 30 && presets.All(p => p != null && Guid.TryParse(p.Id, out _)
@@ -95,7 +110,8 @@ public sealed class AppearanceStore
             throw new InvalidDataException("配置格式或参数无效，当前设置未更改。");
     }
 
-    AppearanceConfiguration Snapshot() => new(Style, Custom, BarHeight, Expanded, AllDisplays, FollowPaused, Presets.ToArray());
+    AppearanceConfiguration Snapshot() => new(Style, Custom, BarHeight, Expanded, AllDisplays, FollowPaused, Presets.ToArray(), ClockFontSize: ClockFontSize, ToolbarOrder: ToolbarItems.ToArray());
+    public void SaveToolbarOrder(IEnumerable<string> order) => Commit(Snapshot() with { ToolbarOrder = ToolbarOrder.Normalize(order) });
     public void SetAllDisplays(bool value) => AllDisplays = value;
     public void SetFollowPaused(bool value) => FollowPaused = value;
 
@@ -140,6 +156,13 @@ public sealed class AppearanceStore
     {
         if (height is < MinimumHeight or > MaximumHeight) throw new ArgumentOutOfRangeException(nameof(height));
         BarHeight = height;
+    }
+
+    public void SetClockFontSize(int size)
+    {
+        if (size is < MinimumClockFontSize or > MaximumClockFontSize) throw new ArgumentOutOfRangeException(nameof(size));
+        if (ClockFontSize == size) return;
+        ClockFontSize = size; ClockFontSizeChanged?.Invoke();
     }
 
     public void Save(GlassStyle style)

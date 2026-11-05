@@ -10,14 +10,34 @@ public partial class App : Application
     internal static string DataDirectory { get; private set; } = "";
     static PlannerStore? planner;
     static StationStore? station;
+    static ClockStore? clock;
+    internal static ClockStore Clock => clock ??= new ClockStore(Path.Combine(DataDirectory, "clock.json"));
+    internal static ClockService? Clocks { get; private set; }
+    static readonly Queue<string> pendingClockActions = new();
+    internal static void DispatchClockAction(string argument)
+    {
+        if (!ClockPolicy.TryParse(argument, out _)) return;
+        if (Clocks != null) _ = Clocks.Handle(argument);
+        else if (pendingClockActions.Count < 32) pendingClockActions.Enqueue(argument);
+    }
+    internal static ClockService StartClocks(Microsoft.UI.Dispatching.DispatcherQueue dispatcher, Func<Guid, bool> open, bool initiallySuspended = false)
+    {
+        if (Clocks == null)
+        {
+            var reminders = Reminders ?? throw new InvalidOperationException("Notification service is not initialized.");
+            Clocks = new ClockService(Clock, reminders.ClockNotifications, dispatcher, open, initiallySuspended);
+            while (pendingClockActions.TryDequeue(out var argument)) _ = Clocks.Handle(argument);
+        }
+        return Clocks;
+    }
     internal static StationStore Station => station ??= new StationStore(Path.Combine(DataDirectory, "station.json"));
     internal static Task FlushStation() => station?.Flush() ?? Task.CompletedTask;
     internal static PlannerStore Planner => planner ??= new PlannerStore(Path.Combine(DataDirectory, "planner.json"));
     static ScreenshotOptionsStore? screenshots;
     internal static ScreenshotOptionsStore Screenshots => screenshots ??= new(Path.Combine(DataDirectory, "screenshot.json"));
     internal static ReminderService? Reminders { get; private set; }
-    internal static ReminderService StartReminders(Microsoft.UI.Dispatching.DispatcherQueue dispatcher, Func<Guid, bool> open, bool verification = false)
-        => Reminders ??= new ReminderService(Planner, dispatcher, open, verification);
+    internal static ReminderService StartReminders(Microsoft.UI.Dispatching.DispatcherQueue dispatcher, Func<Guid, bool> open, bool verification = false, bool initiallySuspended = false)
+        => Reminders ??= new ReminderService(Planner, dispatcher, open, verification, initiallySuspended);
 
     public App()
     {
@@ -47,7 +67,7 @@ public partial class App : Application
         if (!first) { if (startupLaunch) StartupService.Log("already-running"); Exit(); return; }
         if (index < 0 && !arguments.Any(a => a.StartsWith("--verify-", StringComparison.Ordinal))) StartupService.RefreshExistingPath();
         var preferences = new AppearanceStore(Path.Combine(DataDirectory, "appearance.json"));
-        if (arguments.Contains("--verify-expanded") || arguments.Contains("--verify-shell") || arguments.Contains("--verify-planner") || arguments.Contains("--verify-reminders") || arguments.Contains("--verify-screenshot") || arguments.Contains("--verify-qr") || arguments.Contains("--verify-station"))
+        if (arguments.Contains("--verify-toolbar") || arguments.Contains("--verify-expanded") || arguments.Contains("--verify-shell") || arguments.Contains("--verify-planner") || arguments.Contains("--verify-reminders") || arguments.Contains("--verify-screenshot") || arguments.Contains("--verify-qr") || arguments.Contains("--verify-station") || arguments.Contains("--verify-clock"))
         {
             verificationBar = new BarWindow(preferences);
             verificationBar.Start(arguments.Contains("--show-settings"));
@@ -59,7 +79,10 @@ public partial class App : Application
             if (startupLaunch) StartupService.Log("ready");
             if (arguments.Contains("--verify-desktop")) _ = manager.VerifyDesktop();
             else if (index < 0)
-                StartReminders(Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread(), id => manager.RequestReminder(id));
+            {
+                StartReminders(Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread(), id => manager.RequestReminder(id), initiallySuspended: manager.Suspended);
+                StartClocks(Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread(), id => manager.RequestClock(id), manager.Suspended);
+            }
         }
     }
 }
