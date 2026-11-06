@@ -22,7 +22,11 @@ public sealed partial class BarWindow
         guardDot = new Ellipse { Width = 4, Height = 4, HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(0, 0, -1, -1), Visibility = Visibility.Collapsed };
         guardDot.SetBinding(Shape.FillProperty, new Binding { Source = guardButton, Path = new PropertyPath("Foreground") }); content.Children.Add(guardDot);
         guardButton.Content = content;
-        guardButton.Click += async (_, _) => { if (!ToolbarClickBlocked) await App.Guard.SetEnabled(!App.Guard.Wanted); };
+        guardButton.ContextFlyout = CreateGuardMenu();
+        App.GuardChanged += RefreshGuardToolbar; RefreshGuardToolbar();
+    }
+    MenuFlyout CreateGuardMenu()
+    {
         var menu = new MenuFlyout();
         var pause = new MenuFlyoutItem { Text = "暂停 10 分钟", Icon = new SymbolIcon(Symbol.Pause) };
         var resume = new MenuFlyoutItem { Text = "立即恢复", Icon = new SymbolIcon(Symbol.Play) };
@@ -30,21 +34,20 @@ public sealed partial class BarWindow
         menu.Items.Add(pause); menu.Items.Add(resume); menu.Items.Add(new MenuFlyoutSeparator()); menu.Items.Add(toggle);
         menu.Opening += (_, _) =>
         {
-            pause.IsEnabled = App.Guard.Wanted; resume.IsEnabled = App.Guard.Wanted && App.Guard.ManuallyPaused;
-            enableFromMenu = !App.Guard.Wanted; toggle.Text = enableFromMenu ? "开启守护" : "关闭守护";
+            pause.IsEnabled = (App.CurrentGuard?.Wanted == true); resume.IsEnabled = (App.CurrentGuard?.Wanted == true) && (App.CurrentGuard?.ManuallyPaused == true);
+            enableFromMenu = !(App.CurrentGuard?.Wanted == true); toggle.Text = enableFromMenu ? "开启守护" : "关闭守护";
         };
         pause.Click += async (_, _) => { if (!ToolbarClickBlocked) await App.Guard.PauseFor(TimeSpan.FromMinutes(10)); };
         resume.Click += async (_, _) => { if (!ToolbarClickBlocked) await App.Guard.Resume(); };
         toggle.Click += async (_, _) => { if (!ToolbarClickBlocked) await App.Guard.SetEnabled(enableFromMenu); };
-        guardButton.ContextFlyout = menu;
-        App.Guard.Changed += RefreshGuardToolbar; RefreshGuardToolbar();
+        return menu;
     }
     void RefreshGuardToolbar()
     {
         if (closing) return;
-        guardDot.Visibility = App.Guard.State == GuardState.Running ? Visibility.Visible : Visibility.Collapsed;
-        SetGuardGlyph(App.Guard.ManuallyPaused, App.Guard.Wanted && App.Guard.State is GuardState.Unavailable or GuardState.Paused);
-        string status = "屏幕守护 · " + App.Guard.Status;
+        guardDot.Visibility = (App.CurrentGuard?.State ?? GuardState.Off) == GuardState.Running ? Visibility.Visible : Visibility.Collapsed;
+        SetGuardGlyph((App.CurrentGuard?.ManuallyPaused == true), (App.CurrentGuard?.Wanted == true) && (App.CurrentGuard?.State ?? GuardState.Off) is GuardState.Unavailable or GuardState.Paused);
+        string status = "屏幕守护 · " + App.GuardStatus;
         ToolTipService.SetToolTip(guardButton, status); AutomationProperties.SetHelpText(guardButton, status);
         if (reservation is not null) UpdateVisibility();
     }

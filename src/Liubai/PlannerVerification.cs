@@ -19,6 +19,8 @@ public sealed partial class BarWindow
             await Task.Delay(350);
             if (plannerWindow.IsOpen) throw new InvalidOperationException("Planner did not dismiss when focus moved outside.");
             await plannerWindow.FlushAsync();
+            await plannerWindow.VerifyReleasedView();
+            checks.Add("hidden planner releases rendered lists and attachment images after saving");
             checks.Add("outside-focus-dismiss-and-save");
             await plannerWindow.Open(PlannerPage.Notes, Display, AppWindow.Position.Y + AppWindow.Size.Height);
             OpenSettings(); await Task.Delay(200);

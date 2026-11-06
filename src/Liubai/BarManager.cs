@@ -10,11 +10,11 @@ internal sealed partial class BarManager
     readonly Dictionary<string, Native.Rect> originalWork = new(StringComparer.OrdinalIgnoreCase);
     readonly DispatcherQueueTimer refreshTimer;
     readonly Dictionary<(uint, long), long> environmentEvents = new();
-    bool quitting, reconciling, asleep, locked, visible = true;
+    bool quitting, confirmingQuit, reconciling, asleep, locked, visible = true;
     PlannerWindow? plannerPanel;
     internal PlannerWindow? CurrentPlanner => plannerPanel;
     internal bool Suspended => asleep || locked;
-    internal bool HasModal => bars.Values.Any(b => b.PanelModal);
+    internal bool HasModal => quitting || bars.Values.Any(b => b.PanelModal);
 
     internal BarManager(AppearanceStore preferences, DispatcherQueue dispatcher)
     {
@@ -76,13 +76,13 @@ internal sealed partial class BarManager
         {
             App.Reminders?.SetSuspended(Suspended);
             App.Clocks?.SetSuspended(Suspended);
-            App.Guard.SetSuspended(Suspended);
+            App.CurrentGuard?.SetSuspended(Suspended);
             foreach (var bar in bars.Values.ToArray()) bar.Recover(Suspended);
         }
         if (message is 0x007E or 0x02E0 or 0x031A or 0x031E || message == 0x001A && parameter != 47
             || message == 0x0218 && parameter is 7 or 18 || message == 0x02B1 && parameter == 8)
         {
-            if (message is 0x007E or 0x02E0) App.Guard.DisplayChanged();
+            if (message is 0x007E or 0x02E0) App.CurrentGuard?.DisplayChanged();
             refreshTimer.Stop(); refreshTimer.Start();
             if (message is 0x001A or 0x031A)
                 foreach (var bar in bars.Values.ToArray()) bar.RefreshEnvironment();
@@ -127,11 +127,16 @@ internal sealed partial class BarManager
     }
     internal async void Quit()
     {
-        if (quitting || HasModal) return;
+        if (quitting || confirmingQuit || HasModal) return;
+        confirmingQuit = true;
+        try
+        {
+            if (App.Clock.HasPending && bars.Values.FirstOrDefault(b => b.Display.Primary) is { } owner && !await owner.ConfirmClockQuit()) return;
+        }
+        finally { confirmingQuit = false; }
         quitting = true;
-        if (App.Clock.HasPending && bars.Values.FirstOrDefault(b => b.Display.Primary) is { } owner && !await owner.ConfirmClockQuit()) { quitting = false; return; }
         if (plannerPanel != null && !await plannerPanel.FlushAsync()) { quitting = false; return; }
-        foreach (var bar in bars.Values) if (!await bar.FlushStationOptions()) { quitting = false; return; }
+        foreach (var bar in bars.Values) if (!await bar.FlushToolPanels()) { quitting = false; return; }
         await App.StopGuard();
         App.StopAi();
         if (App.Clocks != null) await App.Clocks.Stop();

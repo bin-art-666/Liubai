@@ -11,11 +11,6 @@ public sealed partial class BarWindow
     void InitializePrivacyToolbar()
     {
         privacyButton.Content = PrivacyGlyph(false);
-        privacyButton.Click += async (_, _) =>
-        {
-            if (ToolbarClickBlocked || App.Privacy.Busy) return;
-            await App.Privacy.Toggle();
-        };
         privacyButton.ContextRequested += (_, e) =>
         {
             e.Handled = true;

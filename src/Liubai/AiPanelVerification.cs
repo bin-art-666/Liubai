@@ -27,6 +27,20 @@ internal sealed partial class AiWindow
             }
         }
         await Draft();
+        var savedStyle = PanelTheme.Current;
+        await core.ExecuteScriptAsync("document.getElementById('draft').value='风格变化保留对话草稿'");
+        try
+        {
+            foreach (var style in new[] { UiStyleOptions.ForPreset(UiStylePreset.Rounded), UiStyleOptions.ForPreset(UiStylePreset.Compact) })
+            {
+                PanelTheme.Apply(style); await Task.Delay(80);
+                if (!ReferenceEquals(original, current) || !ReferenceEquals(core, current.View.CoreWebView2)
+                    || System.Text.Json.JsonSerializer.Deserialize<string>(await core.ExecuteScriptAsync("document.getElementById('draft').value")) != "风格变化保留对话草稿")
+                    throw new Exception("Live style change recreated browser or reloaded draft");
+            }
+        }
+        finally { PanelTheme.Apply(savedStyle); await core.ExecuteScriptAsync("document.getElementById('draft').value='保留我的草稿'"); }
+        checks.Add("Live preset changes retain the same WebView2, page and edited local conversation draft");
         if (Detached || AppWindow.IsShownInSwitchers || !IsOpen) throw new Exception("Panel must initially dock below the bar");
         checks.Add("Real WebView2 local page initializes in docked glass panel without launching Edge windows");
         int originalHeight = AppWindow.Size.Height, originalTop = AppWindow.Position.Y;

@@ -30,5 +30,5 @@ public sealed partial class BarWindow
         plannerWindow ??= manager?.GetPlanner(Display) ?? new PlannerWindow(App.Planner, Display);
         await plannerWindow.OpenWorkItem(item, Display, windowShown ? AppWindow.Position.Y + AppWindow.Size.Height : Display.Info.Work.Top);
     }
-    void HideUtilityPanels() { workSceneWindow?.Hide(); focusWindow?.Hide(); screenshotPreview?.Hide(); FinishPeek(); }
+    void HideUtilityPanels() { moreWindow?.Hide(); moreHover?.Stop(); workSceneWindow?.Hide(); focusWindow?.Hide(); screenshotPreview?.Hide(); FinishPeek(); }
 }

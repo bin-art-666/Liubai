@@ -24,7 +24,7 @@ internal sealed partial class PlannerWindow
                 : date == today ? "今天" : date.ToString("yyyy年M月d日") : "未安排日期";
             if (view != TodoView.Completed && label != group) { taskList.Children.Add(Hint(label)); group = label; }
             var row = Row();
-            var summary = new StackPanel { Spacing = 3, MaxWidth = 245 };
+            var summary = new StackPanel { Spacing = 3 };
             summary.Children.Add(new TextBlock { Text = item.Title, TextWrapping = TextWrapping.Wrap, Opacity = item.Completed ? .6 : 1 });
             if (item.Time is { } time)
             {
@@ -55,7 +55,7 @@ internal sealed partial class PlannerWindow
         foreach (var note in notes.Take(noteLimit))
         {
             var row = Row();
-            var summary = new StackPanel { Spacing = 4, MaxWidth = 255 };
+            var summary = new StackPanel { Spacing = 4 };
             int imageCount = App.Work.Store.Data.Images.Count(i => i.NoteId == note.Id);
             summary.Children.Add(new TextBlock { Text = string.IsNullOrWhiteSpace(note.Text) ? imageCount > 0 ? "图文记录" : "空白记录" : Preview(note.Text, 90), TextWrapping = TextWrapping.Wrap });
             if (imageCount > 0) summary.Children.Add(Hint($"{imageCount} 张图片 · 已保存在本机"));
@@ -96,6 +96,5 @@ internal sealed partial class PlannerWindow
         row.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) });
         row.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); row.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); row.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); return row;
     }
-    static Border Card(UIElement content) => new() { Child = content, Padding = new Thickness(7), CornerRadius = new CornerRadius(8),
-        Background = new SolidColorBrush(Windows.UI.Color.FromArgb(18, 128, 128, 128)) };
+    static Border Card(UIElement content) => PanelTheme.Card(content);
 }

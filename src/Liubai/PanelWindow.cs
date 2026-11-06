@@ -40,12 +40,13 @@ internal abstract class PanelWindow : Window
             });
         };
         AppWindow.Closing += (_, args) => { if (!closed) { args.Cancel = true; Hide(); } };
-        Closed += (_, _) => { closed = true; IsOpen = false; activationVersion++; outsideClicks?.Dispose(); caption?.Dispose(); NotifyPresentationChanged(); };
+        Closed += (_, _) => { closed = true; IsOpen = false; activationVersion++; outsideClicks?.Dispose(); caption?.Dispose(); PanelTheme.Unregister(this); NotifyPresentationChanged(); };
     }
 
     protected void InitializePanel(FrameworkElement content)
     {
         Content = content;
+        PanelTheme.Register(this);
         content.KeyDown += (_, args) =>
         {
             if (args.Key != VirtualKey.Escape) return;
@@ -57,11 +58,14 @@ internal abstract class PanelWindow : Window
 
     protected void ShowPanel(bool activate = true)
     {
+        bool entering = !IsOpen;
+        PanelTheme.Refresh(this);
         activationVersion++;
         IsOpen = true;
         // Activate alone is not a reliable way to re-show an AppWindow that was
         // explicitly hidden, especially after a non-activating drag-hover open.
         AppWindow.Show(false);
+        if (entering && Content is FrameworkElement content) PanelMotion.Enter(content);
         if (activate) Activate();
         if (Frameless) Native.RemoveWindowFrame(WinRT.Interop.WindowNative.GetWindowHandle(this));
         caption?.Queue();
@@ -79,7 +83,12 @@ internal abstract class PanelWindow : Window
         outsideClicks?.Dispose();
         outsideClicks = null;
         try { OnHiding(); }
-        finally { AppWindow.Hide(); NotifyPresentationChanged(); }
+        finally
+        {
+            AppWindow.Hide();
+            if (Content is FrameworkElement content) PanelMotion.Reset(content);
+            NotifyPresentationChanged();
+        }
     }
 
     protected virtual void OnHiding() { }

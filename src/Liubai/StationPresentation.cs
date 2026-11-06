@@ -30,29 +30,22 @@ internal sealed partial class StationWindow
     static Button ItemAction(string name, string data, bool header = false)
     {
         var button = IconButton("", name);
-        button.CornerRadius = new CornerRadius(8); button.BorderThickness = new Thickness(1);
-        button.BorderBrush = new SolidColorBrush(Windows.UI.Color.FromArgb(190, 255, 255, 255));
-        button.Background = new SolidColorBrush(Windows.UI.Color.FromArgb(28, 255, 255, 255));
-        foreach (string state in new[] { "PointerOver", "Pressed" })
-            button.Resources["ButtonBorderBrush" + state] = new SolidColorBrush(Windows.UI.Color.FromArgb(220, 255, 255, 255));
+        if (!header) button.Style = PanelTheme.Style("ItemAction");
         var path = (Microsoft.UI.Xaml.Shapes.Path)Microsoft.UI.Xaml.Markup.XamlReader.Load(
             "<Path xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation' Data='" + data + "' StrokeThickness='1.4' StrokeStartLineCap='Round' StrokeEndLineCap='Round' StrokeLineJoin='Round'/>" );
         path.SetBinding(Microsoft.UI.Xaml.Shapes.Shape.StrokeProperty, new Binding { Source = button, Path = new PropertyPath("Foreground") });
+        path.StrokeThickness = PanelTheme.Value<double>("IconStroke");
         var canvas = new Canvas { Width = 20, Height = 20, IsHitTestVisible = false }; canvas.Children.Add(path);
-        if (header)
-        {
-            button.CornerRadius = new CornerRadius(4); button.BorderThickness = new Thickness(0); button.Background = new SolidColorBrush(Colors.Transparent);
-            button.Content = new Viewbox { Width = 16, Height = 16, Child = canvas, IsHitTestVisible = false };
-        }
-        else button.Content = canvas;
+        button.Content = PanelTheme.Track(new Viewbox { Child = canvas, IsHitTestVisible = false },
+            static view => view.Width = view.Height = PanelTheme.Value<double>("IconSize"));
         return button;
     }
-    static Brush DefaultCardBrush() => new SolidColorBrush(Windows.UI.Color.FromArgb(22, 128, 128, 128));
     static Border CreatePreview(StationItem item)
     {
         var glyph = item.Kind switch { StationKind.Folder => "\uE8B7", StationKind.Link => "\uE71B", StationKind.Text => "\uE8A5", _ => "\uE8A5" };
-        var host = new Border { Width = 48, Height = 48, CornerRadius = new CornerRadius(8), VerticalAlignment = VerticalAlignment.Center,
+        var host = new Border { Width = 48, Height = 48, CornerRadius = PanelTheme.Value<CornerRadius>("ControlRadius"), VerticalAlignment = VerticalAlignment.Center,
             Background = new SolidColorBrush(Windows.UI.Color.FromArgb(24, 128, 128, 128)), Child = new FontIcon { Glyph = glyph, FontFamily = new FontFamily("Segoe Fluent Icons"), FontSize = 23, Opacity = .65 } };
+        PanelTheme.Track(host, static border => border.CornerRadius = PanelTheme.Value<CornerRadius>("ControlRadius"));
         AutomationProperties.SetName(host, "内容预览"); return host;
     }
     async Task LoadPreview(StationItem item, Border host, Border card, TextBlock meta, Border grip, Button copy, Button open, int version, string label, CancellationToken cancellation)

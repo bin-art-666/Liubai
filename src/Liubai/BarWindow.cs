@@ -88,33 +88,20 @@ public sealed partial class BarWindow : Window
             Orientation = Orientation.Horizontal, Spacing = 2, Margin = new Thickness(0, 0, 8, 0),
             HorizontalAlignment = HorizontalAlignment.Right, VerticalAlignment = VerticalAlignment.Center,
         };
-        actions.Children.Add(screenshot);
-        actions.Children.Add(qrScan);
-        actions.Children.Add(clockButton);
-        actions.Children.Add(todo);
-        actions.Children.Add(quickNote);
-        actions.Children.Add(shelf);
-        actions.Children.Add(guardButton);
-        actions.Children.Add(privacyButton);
-        actions.Children.Add(aiButton);
-        actions.Children.Add(settings);
         surface = new Border { Child = actions, BorderThickness = new Thickness(0) };
         var cover = new Image { IsHitTestVisible = false, Stretch = Stretch.Fill, Visibility = Visibility.Collapsed };
         transition = new BarAppearanceTransition(cover);
         var layers = new Grid(); layers.Children.Add(surface); layers.Children.Add(cover);
         Content = layers;
+        InitializeToolHost();
         InitializeFocusBar(layers);
         InitializeToolbarReorder(layers);
         InitializeFeatureDrops(); InitializePeeks();
-        PanelToggleTargets.Register(this, todo, quickNote, aiButton, shelf, settings, clockButton);
+        PanelToggleTargets.RegisterDynamic(this, () => ToolCatalog.BuiltIn.Items.Where(tool => tool.Kind == ToolKind.Panel).Select(tool => toolbarButtons[tool.Id]).Concat(moreButton == null ? [] : new[] { moreButton }));
         PanelWindow.PresentationChanged += RefreshPanelHighlights;
         actions.ActualThemeChanged += (_, _) => RefreshPanelHighlights();
-        settings.Click += (_, _) => { if (!ToolbarClickBlocked) ToggleSettings(); };
-        todo.Click += (_, _) => { if (!ToolbarClickBlocked) OpenPlanner(PlannerPage.Tasks); };
-        quickNote.Click += (_, _) => { if (!ToolbarClickBlocked) OpenPlanner(PlannerPage.Notes); };
-        screenshot.Click += async (_, _) => { if (!ToolbarClickBlocked) await TakeScreenshot(); };
         InitializeScreenshotMenu();
-        qrScan.Click += async (_, _) => { if (!ToolbarClickBlocked) await ScanQr(); };
+        InitializeToolbarLayout();
         surface.ActualThemeChanged += (_, _) =>
         {
             if (!transition.Active && !expandedSnapshot.UsesSolid(preferences.Expanded)) UpdateSurface();
@@ -131,9 +118,9 @@ public sealed partial class BarWindow : Window
             manager?.EnvironmentChanged(message, parameter);
             if (manager == null)
             {
-                if (message == 0x02B1 && parameter == 7 || message == 0x0218 && parameter == 4) App.Guard.SetSuspended(true);
-                if (message == 0x02B1 && parameter == 8 || message == 0x0218 && parameter is 7 or 18) App.Guard.SetSuspended(SessionState.Locked == true);
-                if (message is 0x007E or 0x02E0) App.Guard.DisplayChanged();
+                if (message == 0x02B1 && parameter == 7 || message == 0x0218 && parameter == 4) App.CurrentGuard?.SetSuspended(true);
+                if (message == 0x02B1 && parameter == 8 || message == 0x0218 && parameter is 7 or 18) App.CurrentGuard?.SetSuspended(SessionState.Locked == true);
+                if (message is 0x007E or 0x02E0) App.CurrentGuard?.DisplayChanged();
             }
         });
         Closed += (_, _) => { if (!closing) Quit(); };
@@ -178,6 +165,7 @@ public sealed partial class BarWindow : Window
 
     void SetToolbarColors(ElementTheme theme, SolidColorBrush? ink)
     {
+        toolbarTheme = theme; toolbarInk = ink;
         foreach (var button in actions.Children.OfType<Button>())
         {
             button.RequestedTheme = theme;
@@ -212,7 +200,12 @@ public sealed partial class BarWindow : Window
             if (surface.IsLoaded) OpenSettings();
             else surface.Loaded += ShowSettingsOnLoad;
         }
-        if (Environment.GetCommandLineArgs().Contains("--verify-workflow")) _ = VerifyWorkflow();
+        if (Environment.GetCommandLineArgs().Contains("--verify-tool-host")) _ = VerifyToolHost();
+        else if (Environment.GetCommandLineArgs().Contains("--verify-updates") || Environment.GetCommandLineArgs().Contains("--verify-updates-network")) _ = VerifyUpdates();
+        else if (Environment.GetCommandLineArgs().Contains("--verify-modules")) _ = VerifyModules();
+        else if (Environment.GetCommandLineArgs().Contains("--verify-toolbar-layout")) _ = VerifyToolbarLayout();
+        else if (Environment.GetCommandLineArgs().Contains("--verify-ui-style")) _ = VerifyUiStyle();
+        else if (Environment.GetCommandLineArgs().Contains("--verify-workflow")) _ = VerifyWorkflow();
         else if (Environment.GetCommandLineArgs().Contains("--verify-station-browser")) _ = VerifyStationBrowser();
         else if (Environment.GetCommandLineArgs().Contains("--verify-station-size")) _ = VerifyStationSize();
         else if (Environment.GetCommandLineArgs().Contains("--verify-ai-panel")) _ = VerifyAiPanel();
@@ -235,7 +228,7 @@ public sealed partial class BarWindow : Window
         else if (await FlushPlanner())
         {
             if (!await ConfirmClockQuit()) return;
-            if (!await FlushStationOptions()) return;
+            if (!await FlushToolPanels()) return;
             await App.StopGuard();
             App.StopAi();
             if (App.Clocks != null) await App.Clocks.Stop();
@@ -250,17 +243,18 @@ public sealed partial class BarWindow : Window
     {
         if (closing) return;
         FinishToolbarDrag(false); preferences.ToolbarOrderChanged -= ToolbarOrderChanged;
-        closing = true; QrSelectionWindow.CancelActive(); qrResults?.Destroy(); if (qrTip != null) qrTip.IsOpen = false;
-        FinishPeek(); holdTimer?.Stop(); peekWindow?.Destroy(); screenshotPreview?.Destroy(); StopFocusBar();
+        StopToolbarLayout();
+        closing = true; tools?.Stop(); QrSelectionWindow.CancelActive(); if (qrTip != null) qrTip.IsOpen = false;
+        FinishPeek(); holdTimer?.Stop(); peekWindow?.Destroy(); StopFocusBar();
         PanelWindow.PresentationChanged -= RefreshPanelHighlights;
-        App.Guard.Changed -= RefreshGuardToolbar;
+        App.GuardChanged -= RefreshGuardToolbar;
         App.Privacy.Changed -= RefreshPrivacyToolbar;
-        App.Ai.Changed -= RefreshAiToolbar;
-        stationHoverTimer?.Stop(); stationWindow?.Destroy();
-        clockBadgeTimer?.Stop(); App.Clock.Changed -= ClockChanged; preferences.ClockFontSizeChanged -= ClockChanged; clockWindow?.Destroy();
+        App.AiChanged -= RefreshAiToolbar;
+        stationHoverTimer?.Stop();
+        clockBadgeTimer?.Stop(); App.Clock.Changed -= ClockChanged; preferences.ClockFontSizeChanged -= ClockChanged;
         screenshotTipTimer.Stop(); screenshotTip.IsOpen = false;
         transition.Cancel(); appearanceMonitor?.Dispose(); tray?.Dispose(); tray = null;
-        settingsWindow?.Destroy(); if (manager == null) plannerWindow?.Destroy();
+        panelLifecycle?.Release();
         reservation.Dispose(); SystemBackdrop = null; Close();
     }
     internal Task<bool> FlushStationOptions() => settingsWindow?.FlushStationOptions() ?? Task.FromResult(true);
@@ -270,13 +264,13 @@ public sealed partial class BarWindow : Window
         tray ??= new TrayIcon(handle, DispatcherQueue, OpenSettings, ToggleBar, () => barVisible,
             () => preferences.Style, SetStyle, Quit, () => preferences.FollowPaused,
             () => { if (manager != null) manager.TogglePause(); else { preferences.SetFollowPaused(!preferences.FollowPaused); preferences.SaveCurrent(); ApplyExpanded(); } },
-            () => OpenPlanner(PlannerPage.Tasks), () => OpenPlanner(PlannerPage.Notes), () => OpenStation(), () => OpenClock());
+            () => { _ = tools!.Invoke("todo"); }, () => { _ = tools!.Invoke("note"); }, () => OpenStation(), () => OpenClock());
     }
     internal void UpdateDisplay(DesktopMonitor display)
     {
         bool changed = Display != display;
         Display = display; UpdateTray();
-        if (changed) { transition.Cancel(); Position(); appearanceMonitor?.Refresh(); settingsWindow?.UpdateDisplay(display); stationWindow?.UpdateDisplay(display); clockWindow?.UpdateDisplay(display); App.Ai.UpdateDisplay(display); }
+        if (changed) { transition.Cancel(); Position(); appearanceMonitor?.Refresh(); settingsWindow?.UpdateDisplay(display); stationWindow?.UpdateDisplay(display); clockWindow?.UpdateDisplay(display); App.CurrentAi?.UpdateDisplay(display); }
     }
     internal void RefreshMaterial() => ApplyGlass();
     internal void RefreshEnvironment()
@@ -293,10 +287,10 @@ public sealed partial class BarWindow : Window
     internal int SampleCount => appearanceMonitor?.SampleCount ?? 0;
     internal bool TrayRegistered => tray?.IsRegistered == true;
     internal Windows.Graphics.RectInt32 BarRectangle => new(AppWindow.Position.X, AppWindow.Position.Y, AppWindow.Size.Width, AppWindow.Size.Height);
-    internal void HidePanels(bool includeDetached = true) { HideUtilityPanels(); settingsWindow?.Hide(); plannerWindow?.Hide(); qrResults?.Hide(); clockWindow?.Hide(); App.Ai.Hide(includeDetached); if (includeDetached) stationWindow?.Hide(); else stationWindow?.HideDocked(); stationHoverTimer?.Stop(); }
+    internal void HidePanels(bool includeDetached = true)
+    { panelLifecycle?.Hide(includeDetached); FinishPeek(); moreHover?.Stop(); stationHoverTimer?.Stop(); }
     internal Task<bool> FlushPlanner() => plannerWindow?.FlushAsync() ?? Task.FromResult(true);
-    internal bool PanelModal => App.Ai.ModalActive || QrSelectionWindow.Active || clockWindow?.ModalActive == true || stationWindow?.ModalActive == true || qrResults?.ModalActive == true || settingsWindow?.ModalActive == true || plannerWindow?.ModalActive == true
-        || workSceneWindow?.ModalActive == true || focusWindow?.ModalActive == true || screenshotPreview?.ModalActive == true;
+    internal bool PanelModal => QrSelectionWindow.Active || panelLifecycle?.Modal == true;
     internal void RequestSettings()
     {
         if (surface.IsLoaded) OpenSettings(); else surface.Loaded += ShowSettingsOnLoad;
@@ -324,6 +318,7 @@ public sealed partial class BarWindow : Window
         if (closing || !barVisible || !Native.MonitorExists(Display.Handle)) return;
         actions.Visibility = preferences.BarHeight >= 24 ? Visibility.Visible : Visibility.Collapsed;
         foreach (var button in actions.Children.OfType<Button>()) button.Height = Math.Min(28, preferences.BarHeight);
+        QueueToolbarLayout();
         var approved = reservation.Reserve(Display.BarBounds(preferences.BarHeight));
         var actual = new Windows.Graphics.RectInt32(AppWindow.Position.X, AppWindow.Position.Y, AppWindow.Size.Width, AppWindow.Size.Height);
         if (!Native.Same(approved, actual)) { transition.Cancel(); AppWindow.MoveAndResize(approved); }
@@ -391,7 +386,7 @@ public sealed partial class BarWindow : Window
     void UpdateVisibility()
     {
         if (closing) return;
-        bool show = barVisible && (!fullscreen || preferences.Expanded.Enabled) && !App.Guard.AlertBlackout;
+        bool show = barVisible && (!fullscreen || preferences.Expanded.Enabled) && !(App.CurrentGuard?.AlertBlackout == true);
         if (show != windowShown)
         {
             transition.Cancel();
@@ -413,25 +408,29 @@ public sealed partial class BarWindow : Window
     {
         if (PanelModal || manager?.HasModal == true) return;
         HideUtilityPanels();
-        App.Ai.Hide(false);
+        App.HideAi(false);
         clockWindow?.Hide();
         stationWindow?.HideDocked(); stationHoverTimer?.Stop();
         qrResults?.Hide();
         plannerWindow?.Hide();
         manager?.HideOtherPanels(this);
-        settingsWindow ??= new SettingsWindow(preferences,
+        if (settingsWindow == null)
+        {
+        settingsWindow = new SettingsWindow(preferences,
             () => { if (manager != null) manager.ApplyMaterial(); else ApplyGlass(); },
             () => { if (manager != null) manager.ApplyHeight(); else ApplyHeight(); },
             () => { if (manager != null) manager.ApplySettings(); else ApplyExpanded(); }, Quit, Display);
+        settingsWindow.MoreRequested += () => OpenMore();
+        }
         settingsWindow.UpdateDisplay(Display);
         settingsWindow.RefreshStyle(preferences.Style);
         settingsWindow.Open(windowShown ? AppWindow.Position.Y + AppWindow.Size.Height : Display.Info.Work.Top);
     }
-    async void OpenPlanner(PlannerPage page)
+    async Task OpenPlanner(PlannerPage page)
     {
         if (openingPlanner || closing || PanelModal || manager?.HasModal == true) return;
         HideUtilityPanels();
-        App.Ai.Hide(false);
+        App.HideAi(false);
         clockWindow?.Hide();
         stationWindow?.HideDocked(); stationHoverTimer?.Stop();
         qrResults?.Hide();

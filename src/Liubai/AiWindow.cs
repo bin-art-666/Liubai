@@ -15,7 +15,7 @@ internal sealed partial class AiWindow : PanelWindow
     readonly string directory;
     readonly Action changed;
     readonly bool verification;
-    readonly Grid root = new() { Padding = new Thickness(20, 16, 20, 16), RowSpacing = 12, Background = new SolidColorBrush(Colors.Transparent) };
+    readonly Grid root = PanelTheme.Layout();
     readonly Grid browsers = new();
     readonly TextBlock status = new() { FontSize = 12, Opacity = .7, TextWrapping = TextWrapping.Wrap };
     readonly ComboBox provider = new() { HorizontalAlignment = HorizontalAlignment.Stretch };
@@ -62,20 +62,17 @@ internal sealed partial class AiWindow : PanelWindow
         var handle = WinRT.Interop.WindowNative.GetWindowHandle(this);
         int corner = 2, border = unchecked((int)0xFFFFFFFE);
         Native.DwmSetWindowAttribute(handle, 33, ref corner, sizeof(int)); Native.DwmSetWindowAttribute(handle, 34, ref border, sizeof(int));
-        SystemBackdrop = new GlassBackdrop(GlassStyle.Frosted);
+        SystemBackdrop = PanelTheme.Backdrop();
         root.RowDefinitions.Add(new() { Height = GridLength.Auto }); root.RowDefinitions.Add(new() { Height = GridLength.Auto });
         root.RowDefinitions.Add(new() { Height = new GridLength(1, GridUnitType.Star) }); root.RowDefinitions.Add(new() { Height = GridLength.Auto });
-        var header = new Grid { ColumnSpacing = 10 };
-        header.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) }); header.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
-        var grip = new Border { Background = new SolidColorBrush(Colors.Transparent), Child = new TextBlock { Text = "AI 助手", FontSize = 23, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold } };
-        header.Children.Add(grip);
-        var controls = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
+        var grip = new Border { Background = new SolidColorBrush(Colors.Transparent), Child = PanelTheme.Title("AI 助手") };
+        var controls = PanelTheme.Actions();
         Style(pin, "固定 AI 面板"); pin.Content = Glyph("\uE718");
         var close = Icon("\uE8BB", "收起 AI 面板");
         expand.Click += (_, _) => ToggleDetached(); close.Click += (_, _) => Hide();
         pin.Click += (_, _) => { try { options.Save(options.Data with { Pinned = pin.IsChecked == true }); } catch { ApplyPin(); SetStatus("固定状态保存失败，请重试。"); } };
         controls.Children.Add(expand); controls.Children.Add(pin); controls.Children.Add(close);
-        Grid.SetColumn(controls, 1); header.Children.Add(controls); root.Children.Add(header);
+        var header = PanelTheme.Header(grip, controls); root.Children.Add(header);
         InitializeFloatingCaption(header, controls, () => Detached);
         var navigation = new Grid { ColumnSpacing = 8 };
         navigation.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); navigation.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) });
@@ -84,7 +81,8 @@ internal sealed partial class AiWindow : PanelWindow
         provider.SelectionChanged += (_, _) => { if (!syncing && provider.SelectedItem is Choice choice) try { options.Save(options.Data with { Provider = choice.Id }); } catch { SetStatus("AI 服务保存失败，请重试。"); } };
         Grid.SetRow(navigation, 1); root.Children.Add(navigation);
         var browserHost = new Grid(); browserHost.Children.Add(browsers); InitializeDropInbox(browserHost);
-        var content = new Border { CornerRadius = new CornerRadius(12), Child = dropContent, Background = new SolidColorBrush(Colors.Transparent) };
+        var content = new Border { CornerRadius = PanelTheme.Value<CornerRadius>("CardRadius"), Child = dropContent, Background = new SolidColorBrush(Colors.Transparent) };
+        PanelTheme.Track(content, static border => border.CornerRadius = PanelTheme.Value<CornerRadius>("CardRadius"));
         Grid.SetRow(content, 2); root.Children.Add(content);
         var footer = new StackPanel { Spacing = 6 }; footer.Children.Add(status); footer.Children.Add(retry);
         retry.Click += async (_, _) => { if (current is null) return; if (current.View.CoreWebView2 != null && !current.Failed) current.View.Reload(); else { Remove(current); current = null; await ShowSelected(); } };
@@ -96,13 +94,8 @@ internal sealed partial class AiWindow : PanelWindow
         var shell = new Grid(); shell.Children.Add(root); InitializeDockResize(shell);
         InitializePanel(shell); ApplyOptions();
     }
-    static FontIcon Glyph(string value) => new() { Glyph = value, FontSize = 15 };
-    static void Style(ButtonBase button, string name)
-    {
-        button.Width = button.Height = 32; button.MinWidth = button.MinHeight = 0; button.Padding = new Thickness(0);
-        button.BorderThickness = new Thickness(0); button.Background = new SolidColorBrush(Colors.Transparent);
-        AutomationProperties.SetName(button, name); ToolTipService.SetToolTip(button, name);
-    }
+    static FontIcon Glyph(string value) => PanelTheme.Glyph(value);
+    static void Style(ButtonBase button, string name) => PanelTheme.IconStyle(button, name);
     static Button Icon(string value, string name) { var button = new Button { Content = Glyph(value) }; Style(button, name); return button; }
     void SetStatus(string text) { if (!destroyed) { status.Text = text; changed(); } }
     void PageStatus(Page page, string text, bool retry = false)

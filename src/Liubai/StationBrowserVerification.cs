@@ -74,7 +74,9 @@ public sealed partial class BarWindow
             var data = new StationDocument(1, [Item(StationKind.File, Path.Combine(App.DataDirectory,"fixture.JPG"),0), Item(StationKind.File,Path.Combine(App.DataDirectory,"fixture.pdf"),1),
                 Item(StationKind.Folder,App.DataDirectory,0),Item(StationKind.Text,"今天的备忘",0),Item(StationKind.Text,"以前的备忘",8),Item(StationKind.Link,"https://example.com/",3,"项目链接")]);
             File.WriteAllText(Path.Combine(App.DataDirectory,"station.json"),System.Text.Json.JsonSerializer.Serialize(data));
-            panel = new StationWindow(App.Station,Display); checks = await panel.VerifyBrowser();
+            // The focus bar may already have initialized App.Station before these
+            // fixture records were written. Load this fixture into its own store.
+            panel = new StationWindow(new StationStore(Path.Combine(App.DataDirectory, "station.json")),Display); checks = await panel.VerifyBrowser();
         }
         catch (Exception ex) { result = "FAIL"; error = ex.ToString(); }
         finally

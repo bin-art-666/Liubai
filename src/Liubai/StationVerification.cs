@@ -22,6 +22,7 @@ public sealed partial class BarWindow
     async Task VerifyStation()
     {
         string result = "PASS", error = ""; var checks = new List<string>(); Window? fixture = null;
+        IDisposable? importLease = null;
         try
         {
             Directory.CreateDirectory(App.DataDirectory);
@@ -29,6 +30,9 @@ public sealed partial class BarWindow
             File.WriteAllText(file, "Liubai generated station fixture"); Directory.CreateDirectory(folder);
             await Task.Delay(400);
             if (!OpenStation()) throw new Exception("Station toolbar entry did not open");
+            // This scheduled fixture has no drag-source foreground grant. Protect
+            // only the synthetic import sequence, then test actual drop dismissal.
+            importLease = stationWindow!.ProtectImportFixture();
             var text = new DataPackage(); text.SetText("中转站测试 · text fixture");
             if (!await stationWindow!.Receive(text.GetView())) throw new Exception("Text receive failed");
             var link = new DataPackage(); link.SetWebLink(new Uri("https://example.com/")); link.SetText("https://example.com/");
@@ -76,7 +80,7 @@ public sealed partial class BarWindow
             { rollback = import.Inputs.Single().Value; if (!File.Exists(rollback)) throw new Exception("Rollback fixture missing"); }
             if (File.Exists(rollback) || Directory.Exists(Path.GetDirectoryName(rollback))) throw new Exception("Uncommitted virtual file leaked");
             checks.Add("Pathless streamed file saved locally; uncommitted copy rolled back");
-            stationWindow.ConfirmDrop(); await Task.Delay(500);
+            stationWindow.ConfirmDrop(); importLease.Dispose(); importLease = null; await Task.Delay(500);
             if (!stationWindow.IsOpen) throw new Exception("Successful incoming drop did not remain open");
             checks.Add("Successful incoming drop stays open after source-activation grace period; foreground activation also requested");
             await VerifyStationAppearance(checks);
@@ -94,6 +98,8 @@ public sealed partial class BarWindow
             if (!stationWindow.IsOpen) throw new Exception("Pinned station dismissed outside");
             pin.IsChecked = false; stationWindow.Open(Display, BarRectangle.Y + BarRectangle.Height); Activate(); await Task.Delay(350);
             if (stationWindow.IsOpen) throw new Exception("Unpinned station did not dismiss outside");
+            stationWindow.VerifyReleasedView();
+            checks.Add("Hidden station releases preview tasks, cards and thumbnail cache");
             checks.Add("Pin and ordinary outside-focus dismissal");
             OpenStation(); stationWindow.ToggleDetached();
             var presenter = (OverlappedPresenter)stationWindow.AppWindow.Presenter;
@@ -159,6 +165,7 @@ public sealed partial class BarWindow
         catch (Exception ex) { result = "FAIL"; error = ex.ToString(); }
         finally
         {
+            importLease?.Dispose();
             fixture?.Close(); stationWindow?.Hide(); settingsWindow?.Hide();
             File.WriteAllText(Path.Combine(App.DataDirectory, "station-check.json"), System.Text.Json.JsonSerializer.Serialize(new { result, error, checks }));
             Close();

@@ -9,14 +9,14 @@ public sealed partial class BarWindow
     bool featureDropBusy;
     void InitializeFeatureDrops()
     {
-        foreach (var button in new[] { todo, quickNote, aiButton })
+        foreach (var button in ToolCatalog.BuiltIn.Items.Where(tool => tool.Has(ToolCapabilities.Drop) && tool.Id != "station").Select(tool => toolbarButtons[tool.Id]))
         {
             button.AllowDrop = true;
             button.DragOver += (_, e) =>
             {
                 e.Handled = true;
-                e.AcceptedOperation = !featureDropBusy && !closing && !PanelModal && manager?.HasModal != true && DropPayload.Supported(e.DataView) ? DataPackageOperation.Copy : DataPackageOperation.None;
-                e.DragUIOverride.Caption = button == todo ? "文字添加到待办" : button == quickNote ? "保存为图文记录" : "暂存到 AI，确认后再交给网站";
+                e.AcceptedOperation = !featureDropBusy && !closing && !PanelModal && manager?.HasModal != true && tools?.Accepts(toolIds[button], e.DataView) == true ? DataPackageOperation.Copy : DataPackageOperation.None;
+                e.DragUIOverride.Caption = ToolCatalog.BuiltIn[toolIds[button]].DropCaption;
                 e.DragUIOverride.IsCaptionVisible = true;
                 if (button == aiButton && e.AcceptedOperation == DataPackageOperation.Copy) SetPanelHighlight(aiButton, true);
             };
@@ -29,13 +29,7 @@ public sealed partial class BarWindow
                     if (featureDropBusy || closing || PanelModal || manager?.HasModal == true) return;
                     featureDropBusy = true;
                     ownsDrop = true;
-                    if (button == aiButton) { await OpenAiPanel(); e.AcceptedOperation = await App.Ai.ReceiveDrop(e.DataView) ? DataPackageOperation.Copy : DataPackageOperation.None; }
-                    else
-                    {
-                        var panel = await OpenImportPlanner(button == todo ? PlannerPage.Tasks : PlannerPage.Notes);
-                        bool saved = await panel.ReceiveDrop(e.DataView); e.AcceptedOperation = saved ? DataPackageOperation.Copy : DataPackageOperation.None;
-                        if (saved) panel.ConfirmIncomingDrop();
-                    }
+                    e.AcceptedOperation = await tools!.Drop(toolIds[button], e.DataView) ? DataPackageOperation.Copy : DataPackageOperation.None;
                 }
                 catch (Exception ex) when (ex is not OutOfMemoryException) { ShowScreenshotResult("拖入未完成：" + ex.Message); e.AcceptedOperation = DataPackageOperation.None; }
                 finally { if (ownsDrop) featureDropBusy = false; deferral.Complete(); RefreshPanelHighlights(); }

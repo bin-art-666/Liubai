@@ -12,4 +12,5 @@
     <Compile Include="../../src/Liubai/ExpandedWindowPolicy.cs" Link="ExpandedWindowPolicy.cs" />
     <Compile Include="../../src/Liubai/ExpandedColorPolicy.cs" Link="ExpandedColorPolicy.cs" />
   </ItemGroup>
+  <ItemGroup><Compile Include="../../src/Liubai/ToolCatalog.cs" Link="ToolCatalog.cs" /></ItemGroup>
 </Project>

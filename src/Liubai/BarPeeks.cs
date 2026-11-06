@@ -17,11 +17,11 @@ public sealed partial class BarWindow
     {
         holdTimer = DispatcherQueue.CreateTimer(); holdTimer.IsRepeating = false; holdTimer.Interval = TimeSpan.FromMilliseconds(650);
         holdTimer.Tick += (_, _) => ShowHeldPreview();
-        foreach (var button in new[] { todo, quickNote, clockButton })
+        foreach (var button in ToolCatalog.BuiltIn.Items.Where(tool => tool.Has(ToolCapabilities.Peek)).Select(tool => toolbarButtons[tool.Id]))
         {
             button.AddHandler(UIElement.PointerPressedEvent, new PointerEventHandler((_, e) =>
             {
-                if (e.KeyModifiers.HasFlag(VirtualKeyModifiers.Control) || ToolbarClickBlocked || !e.GetCurrentPoint(button).Properties.IsLeftButtonPressed) return;
+                if (!ReferenceEquals(button.Parent, actions) || e.KeyModifiers.HasFlag(VirtualKeyModifiers.Control) || ToolbarClickBlocked || !e.GetCurrentPoint(button).Properties.IsLeftButtonPressed) return;
                 FinishPeek(); heldButton = button; heldPoint = e.GetCurrentPoint(button).Position; holdTimer.Stop(); holdTimer.Start();
             }), true);
             button.AddHandler(UIElement.PointerMovedEvent, new PointerEventHandler((_, e) =>
@@ -38,8 +38,7 @@ public sealed partial class BarWindow
     void ShowHeldPreview()
     {
         if (heldButton == null || closing || PanelModal || manager?.HasModal == true || ToolbarClickBlocked) { FinishPeek(); return; }
-        peekFired = true; peekWindow ??= new PeekWindow();
-        peekWindow.Open(heldButton == todo ? "todo" : heldButton == clockButton ? "clock" : "note", Display, windowShown ? AppWindow.Position.Y + AppWindow.Size.Height : Display.Info.Work.Top);
+        peekFired = tools?.Peek(toolIds[heldButton]) == true;
     }
     void FinishPeek()
     {

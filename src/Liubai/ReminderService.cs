@@ -162,6 +162,7 @@ internal sealed class ReminderService
     }
     void PublishStatus()
     { if (lastWarning != Warning) { lastWarning = Warning; StatusChanged?.Invoke(); } }
+    internal Task FlushForMaintenance() => coordinator.Flush();
     internal async Task Stop()
     {
         if (stopped) return;

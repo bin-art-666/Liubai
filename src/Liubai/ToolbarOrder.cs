@@ -2,7 +2,7 @@ namespace Liubai;
 
 internal static class ToolbarOrder
 {
-    internal static readonly string[] Defaults = ["screenshot", "qr", "clock", "todo", "note", "station", "guard", "privacy", "ai", "settings"];
+    internal static readonly string[] Defaults = ToolCatalog.BuiltIn.Items.Select(tool => tool.Id).ToArray();
     internal static string[] Normalize(IEnumerable<string>? saved)
     {
         var known = Defaults.ToHashSet(StringComparer.Ordinal);

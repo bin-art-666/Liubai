@@ -18,9 +18,9 @@ public sealed partial class BarWindow
         surface.Child = null; focusEntry.Content = focusTitle; Grid.SetColumn(focusEntry, 1); row.Children.Add(focusEntry); Grid.SetColumn(actions, 2); row.Children.Add(actions); surface.Child = row;
         focusEntry.SetBinding(Control.ForegroundProperty, new Binding { Source = clockButton, Path = new PropertyPath("Foreground") });
         focusProgress.SetBinding(Border.BackgroundProperty, new Binding { Source = clockButton, Path = new PropertyPath("Foreground") }); layers.Children.Add(focusProgress);
-        focusEntry.Click += (_, _) => { if (!ToolbarClickBlocked && App.Work.Store.Data.Focus is { } focus) OpenFocus(focus.TaskId, Display.Device); };
+        focusEntry.Click += (_, _) => { if (!ToolbarClickBlocked && App.WorkStore.Data.Focus is { } focus) OpenFocus(focus.TaskId, Display.Device); };
         surface.SizeChanged += (_, _) => RefreshFocusBar();
-        App.FocusRequested += OpenFocus; App.Work.Store.Changed += RefreshFocusBar;
+        App.FocusRequested += OpenFocus; App.WorkStore.Changed += RefreshFocusBar;
         focusReady = true; RefreshFocusBar();
     }
     void OpenFocus(Guid task, string device)
@@ -32,7 +32,7 @@ public sealed partial class BarWindow
     void RefreshFocusBar()
     {
         if (!focusReady || closing) return;
-        var focus = App.Work.Store.Data.Focus; var clock = App.Clock.Data.Countdown;
+        var focus = App.WorkStore.Data.Focus; var clock = App.Clock.Data.Countdown;
         bool visible = focus != null && clock?.Id == focus.ClockId && clock.State is ClockState.Running or ClockState.Paused or ClockState.Finished;
         focusEntry.Visibility = visible && surface.ActualHeight >= 18 ? Visibility.Visible : Visibility.Collapsed;
         focusProgress.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
@@ -47,6 +47,6 @@ public sealed partial class BarWindow
     }
     void StopFocusBar()
     {
-        App.FocusRequested -= OpenFocus; App.Work.Store.Changed -= RefreshFocusBar; focusWindow?.Destroy(); workSceneWindow?.Destroy();
+        App.FocusRequested -= OpenFocus; App.WorkStore.Changed -= RefreshFocusBar;
     }
 }

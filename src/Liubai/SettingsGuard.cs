@@ -76,8 +76,8 @@ internal sealed partial class SettingsWindow
             if (!SaveGuardOptions()) { RefreshGuardSettings(); return; }
             await App.Guard.SetEnabled(guardEnabled.IsOn);
         };
-        App.Guard.Changed += RefreshGuardSettings;
-        Closed += (_, _) => { guardSaveTimer.Stop(); App.Guard.Changed -= RefreshGuardSettings; };
+        App.GuardChanged += RefreshGuardSettings;
+        Closed += (_, _) => { guardSaveTimer.Stop(); App.GuardChanged -= RefreshGuardSettings; };
         RefreshGuardSettings();
         return new Expander { Header = "屏幕守护", Content = panel, HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Stretch };
     }
@@ -85,7 +85,7 @@ internal sealed partial class SettingsWindow
     {
         if (guardEnabled == null) return;
         guardSync = true;
-        try { guardEnabled.IsOn = App.Guard.Wanted; guardStatus.Text = App.Guard.Status; }
+        try { guardEnabled.IsOn = (App.CurrentGuard?.Wanted == true); guardStatus.Text = App.GuardStatus; }
         finally { guardSync = false; }
     }
     bool SaveGuardOptions(double? holdOverride = null)

@@ -29,11 +29,6 @@ public sealed partial class BarWindow
         clockBadgeTimer = DispatcherQueue.CreateTimer(); clockBadgeTimer.Interval = TimeSpan.FromSeconds(1); clockBadgeTimer.Tick += (_, _) => UpdateClockButton();
         App.Clock.Changed += ClockChanged;
         preferences.ClockFontSizeChanged += ClockChanged;
-        clockButton.Click += (_, _) =>
-        {
-            if (ToolbarClickBlocked || closing || openingPlanner || PanelModal || manager?.HasModal == true || manager?.Suspended == true) return;
-            if (clockWindow?.IsOpen == true) clockWindow.Hide(); else OpenClock();
-        };
         UpdateClockButton();
     }
     void ClockChanged() => DispatcherQueue.TryEnqueue(() => { if (!closing) UpdateClockButton(); });
@@ -62,13 +57,14 @@ public sealed partial class BarWindow
         if (text != clockTipText) { clockTipText = text; ToolTipService.SetToolTip(clockButton, text); Microsoft.UI.Xaml.Automation.AutomationProperties.SetHelpText(clockButton, text); }
         if (active && clockBadgeTimer?.IsRunning != true) clockBadgeTimer?.Start(); else if (!active) clockBadgeTimer?.Stop();
         RefreshFocusBar();
+        if (moreWindow?.Contains(clockButton) == true) moreWindow.StyleButton(clockButton); else QueueToolbarLayout();
     }
     internal bool RequestClock(Guid id) => OpenClock(id);
     bool OpenClock(Guid? id = null)
     {
         if (closing || openingPlanner || PanelModal || manager?.HasModal == true || manager?.Suspended == true || !Native.MonitorExists(Display.Handle)) return false;
         HideUtilityPanels();
-        App.Ai.Hide(false);
+        App.HideAi(false);
         settingsWindow?.Hide(); plannerWindow?.Hide(); qrResults?.Hide(); stationWindow?.HideDocked(); stationHoverTimer?.Stop(); manager?.HideOtherPanels(this);
         clockWindow ??= new ClockWindow(App.Clock, Display);
         clockWindow.Open(Display, windowShown ? AppWindow.Position.Y + AppWindow.Size.Height : Display.Info.Work.Top, id);

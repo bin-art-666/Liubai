@@ -83,8 +83,8 @@ internal sealed class PrivacyService
                 }
                 // Take the durable snapshot before releasing guard or requesting elevation.
                 PrivacyFiles.Write(JournalPath, new PrivacyJournal(Active: true, Entries: entries)); Reload();
-                bool wanted = App.Guard.Wanted; guardPauseUntil = App.Guard.PauseDeadline;
-                await App.Guard.SetEnabled(false);
+                bool wanted = (App.CurrentGuard?.Wanted == true); guardPauseUntil = (App.CurrentGuard?.PauseDeadline ?? 0);
+                if (App.CurrentGuard is { } activeGuard) await activeGuard.SetEnabled(false);
                 restoreGuard = wanted;
             }
             var start = new ProcessStartInfo(Environment.ProcessPath!) { UseShellExecute = true, Verb = "runas", WorkingDirectory = AppContext.BaseDirectory };

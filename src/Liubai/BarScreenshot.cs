@@ -13,12 +13,16 @@ public sealed partial class BarWindow
     ScreenshotPreviewWindow? screenshotPreview;
     void InitializeScreenshotMenu()
     {
+        screenshot.ContextFlyout = CreateScreenshotMenu();
+    }
+    MenuFlyout CreateScreenshotMenu()
+    {
         var menu = new MenuFlyout();
         var openFolder = new MenuFlyoutItem { Text = "打开截图文件夹", Icon = new SymbolIcon(Symbol.Folder) };
         openFolder.Click += async (_, _) => await OpenScreenshotFolder();
         menu.Items.Add(openFolder);
         menu.Opening += (_, _) => openFolder.IsEnabled = !closing && !openingScreenshotFolder && !ToolbarClickBlocked;
-        screenshot.ContextFlyout = menu;
+        return menu;
     }
     async Task OpenScreenshotFolder()
     {

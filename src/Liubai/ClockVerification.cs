@@ -21,7 +21,7 @@ public sealed partial class BarWindow
         {
             await Task.Delay(600);
             string[] expected = ["截图", "扫码", "时钟", "待办", "随手记", "收纳盒", "屏幕守护", "一键隐私", "AI 快捷窗", "设置"];
-            if (!actions.Children.OfType<Button>().Select(AutomationProperties.GetName).SequenceEqual(expected)) throw new Exception("Toolbar order mismatch");
+            if (!actions.Children.OfType<Button>().Where(b => !ReferenceEquals(b, moreButton)).Select(AutomationProperties.GetName).SequenceEqual(expected)) throw new Exception("Toolbar order mismatch");
             if (!OpenClock()) throw new Exception("Clock entry did not open");
             checks.Add("Clock toolbar before todo; panel opened");
             var store = App.Clock;

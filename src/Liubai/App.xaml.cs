@@ -8,6 +8,10 @@ public partial class App : Application
     BarManager? manager;
     BarWindow? verificationBar;
     internal static string DataDirectory { get; private set; } = "";
+    static UiStyleStore? uiStyle;
+    internal static UiStyleStore UiStyle => uiStyle ??= new(Path.Combine(DataDirectory, "ui-style.json"));
+    static ToolbarLayoutStore? toolbarLayout;
+    internal static ToolbarLayoutStore ToolbarLayout => toolbarLayout ??= new(Path.Combine(DataDirectory, "toolbar-layout.json"));
     static PlannerStore? planner;
     static StationStore? station;
     static ClockStore? clock;
@@ -30,22 +34,28 @@ public partial class App : Application
         }
         return Clocks;
     }
-    internal static StationStore Station => station ??= new StationStore(Path.Combine(DataDirectory, "station.json"));
+    internal static StationStore Station
+    {
+        get { if (station == null) { station = new(Path.Combine(DataDirectory, "station.json")); Work.Attach(station); } return station; }
+    }
     internal static Task FlushStation() => station?.Flush() ?? Task.CompletedTask;
     static GuardOptionsStore? guardOptions;
-    static GuardService? guard;
     internal static GuardOptionsStore GuardOptions => guardOptions ??= new(Path.Combine(DataDirectory, "guard.json"));
-    internal static GuardService Guard => guard ??= new(GuardOptions, Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread());
-    internal static Task StopGuard() => guard?.Stop() ?? Task.CompletedTask;
+    internal static GuardService Guard => guardModule.Get();
+    internal static Task StopGuard() => CurrentGuard?.Stop() ?? Task.CompletedTask;
     static PrivacyService? privacy;
     internal static PrivacyService Privacy => privacy ??= new(DataDirectory);
-    static AiService? ai;
-    internal static AiService Ai => ai ??= new(DataDirectory);
-    internal static void StopAi() => ai?.Stop();
-    internal static PlannerStore Planner => planner ??= new PlannerStore(Path.Combine(DataDirectory, "planner.json"));
+    internal static AiService Ai => aiModule.Get();
+    internal static void StopAi() => aiModule.Release(service => service.Stop());
+    internal static PlannerStore Planner
+    {
+        get { if (planner == null) { planner = new(Path.Combine(DataDirectory, "planner.json")); Work.Attach(planner); } return planner; }
+    }
     static WorkHub? work;
-    internal static WorkHub Work => work ??= new(DataDirectory, Planner, Station);
-    internal static Task FlushWork() => work?.Flush() ?? Task.CompletedTask;
+    static WorkStore? workStore;
+    internal static WorkStore WorkStore => workStore ??= new(Path.Combine(DataDirectory, "workspaces.json"));
+    internal static WorkHub Work => work ??= new(WorkStore, () => Planner, () => Station);
+    internal static Task FlushWork() => work?.Flush() ?? workStore?.Flush() ?? Task.CompletedTask;
     internal static event Action<Guid, string>? FocusRequested;
     internal static void RequestFocus(Guid task, string display) => FocusRequested?.Invoke(task, display);
     static ScreenshotOptionsStore? screenshots;
@@ -86,9 +96,10 @@ public partial class App : Application
         if (startupLaunch) StartupService.Log("launch");
         instance = new Mutex(true, "Local\\Liubai.GlassBar", out bool first);
         if (!first) { if (startupLaunch) StartupService.Log("already-running"); Exit(); return; }
+        PanelTheme.Apply(UiStyle.Data);
         if (index < 0 && !arguments.Any(a => a.StartsWith("--verify-", StringComparison.Ordinal))) StartupService.RefreshExistingPath();
         var preferences = new AppearanceStore(Path.Combine(DataDirectory, "appearance.json"));
-        if (arguments.Contains("--verify-workflow") || arguments.Contains("--verify-station-browser") || arguments.Contains("--verify-station-size") || arguments.Contains("--verify-ai-panel") || arguments.Contains("--verify-privacy") || arguments.Contains("--verify-guard") || arguments.Contains("--verify-toolbar") || arguments.Contains("--verify-expanded") || arguments.Contains("--verify-shell") || arguments.Contains("--verify-planner") || arguments.Contains("--verify-reminders") || arguments.Contains("--verify-screenshot") || arguments.Contains("--verify-qr") || arguments.Contains("--verify-station") || arguments.Contains("--verify-clock"))
+        if (arguments.Contains("--verify-tool-host") || arguments.Contains("--verify-updates") || arguments.Contains("--verify-updates-network") || arguments.Contains("--verify-modules") || arguments.Contains("--verify-toolbar-layout") || arguments.Contains("--verify-ui-style") || arguments.Contains("--verify-workflow") || arguments.Contains("--verify-station-browser") || arguments.Contains("--verify-station-size") || arguments.Contains("--verify-ai-panel") || arguments.Contains("--verify-privacy") || arguments.Contains("--verify-guard") || arguments.Contains("--verify-toolbar") || arguments.Contains("--verify-expanded") || arguments.Contains("--verify-shell") || arguments.Contains("--verify-planner") || arguments.Contains("--verify-reminders") || arguments.Contains("--verify-screenshot") || arguments.Contains("--verify-qr") || arguments.Contains("--verify-station") || arguments.Contains("--verify-clock"))
         {
             verificationBar = new BarWindow(preferences);
             verificationBar.Start(arguments.Contains("--show-settings"));
@@ -98,12 +109,14 @@ public partial class App : Application
             manager = new BarManager(preferences, Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread());
             manager.Start(arguments.Contains("--show-settings"));
             if (startupLaunch) StartupService.Log("ready");
-            if (arguments.Contains("--verify-desktop")) _ = manager.VerifyDesktop();
+            if (arguments.Contains("--verify-manager-quit")) _ = manager.VerifyManagerQuit();
+            else if (arguments.Contains("--verify-desktop")) _ = manager.VerifyDesktop();
             else if (index < 0)
             {
                 StartReminders(Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread(), id => manager.RequestReminder(id), initiallySuspended: manager.Suspended);
                 StartClocks(Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread(), id => manager.RequestClock(id), manager.Suspended);
             }
         }
+        UpdateService.MarkReady(arguments);
     }
 }

@@ -56,22 +56,26 @@ internal sealed partial class SettingsWindow : PanelWindow
         saveTimer.IsRepeating = false;
         saveTimer.Tick += (_, _) => FlushChanges();
 
-        var root = new Grid { Padding = new Thickness(24, 16, 24, 20), RowSpacing = 14 };
+        var root = PanelTheme.Layout();
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        var header = new Grid();
-        header.Children.Add(new TextBlock { Text = "留白", FontSize = 12, Opacity = .6, CharacterSpacing = 140, VerticalAlignment = VerticalAlignment.Center });
-        var close = new Button { Content = new FontIcon { Glyph = "\uE8BB", FontSize = 10 }, Width = 28, Height = 28, MinWidth = 0, MinHeight = 0, Padding = new Thickness(0), Background = new SolidColorBrush(Colors.Transparent), BorderThickness = new Thickness(0), HorizontalAlignment = HorizontalAlignment.Right };
-        AutomationProperties.SetName(close, "收起设置");
+        var brand = new TextBlock { Text = "留白", FontSize = 12, Opacity = .6, CharacterSpacing = 140, VerticalAlignment = VerticalAlignment.Center };
+        var headerActions = PanelTheme.Actions();
+        var headerSave = PanelTheme.Icon("\uE74E", "立即保存全部设置");
+        headerSave.Click += async (_, _) => await SaveAllSettings(); headerActions.Children.Add(headerSave);
+        var close = PanelTheme.Icon("\uE8BB", "收起设置");
         close.Click += (_, _) => Hide();
-        header.Children.Add(close);
-        root.Children.Add(header);
+        headerActions.Children.Add(close);
+        root.Children.Add(PanelTheme.Header(brand, headerActions));
 
         var stack = new StackPanel { Spacing = 16, Padding = new Thickness(0, 0, 8, 4) };
         stack.Children.Add(new TextBlock { Text = "留白设置", FontSize = 24, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
         stack.Children.Add(Hint("管理常用功能与顶栏外观。"));
         stack.Children.Add(BuildDailySettings());
+        stack.Children.Add(BuildUpdateSettings());
+        stack.Children.Add(BuildToolbarLayoutSettings());
+        stack.Children.Add(BuildUiStyleSettings());
         stack.Children.Add(BuildScreenshotSettings());
         stack.Children.Add(BuildClockSettings());
         stack.Children.Add(BuildStationSettings());
@@ -174,15 +178,16 @@ internal sealed partial class SettingsWindow : PanelWindow
         footer.Children.Add(status);
         var save = new Button { Content = "确定保存", HorizontalAlignment = HorizontalAlignment.Stretch };
         AutomationProperties.SetName(save, "确定保存全部设置");
-        save.Click += async (_, _) => { if (SaveGuardOptions() && SaveAiSettings(AiCustomSelected) && await SaveStationSettings()) FlushChanges(force: true); };
+        save.Click += async (_, _) => await SaveAllSettings();
         footer.Children.Add(save);
         var exit = new Button { Content = "退出留白", HorizontalAlignment = HorizontalAlignment.Stretch };
         exit.Click += async (_, _) => { if (SaveGuardOptions() && SaveAiSettings(AiCustomSelected) && await SaveStationSettings()) { FlushChanges(); quit(); } };
         footer.Children.Add(exit);
         Grid.SetRow(footer, 2); root.Children.Add(footer);
-        var surface = new Border { Child = root, CornerRadius = new CornerRadius(12), BorderThickness = new Thickness(0), Background = new SolidColorBrush(Colors.Transparent) };
+        var surface = new Border { Child = root, CornerRadius = PanelTheme.Value<CornerRadius>("PanelRadius"), BorderThickness = new Thickness(0), Background = new SolidColorBrush(Colors.Transparent) };
+        PanelTheme.Track(surface, static border => border.CornerRadius = PanelTheme.Value<CornerRadius>("PanelRadius"));
         InitializePanel(surface);
-        SystemBackdrop = new GlassBackdrop(GlassStyle.Frosted);
+        SystemBackdrop = PanelTheme.Backdrop();
 
         preset.SelectionChanged += (_, _) =>
         {
@@ -223,7 +228,7 @@ internal sealed partial class SettingsWindow : PanelWindow
         surface.Loaded += (_, _) => DispatcherQueue.TryEnqueue(() => interactive = true);
     }
 
-    static TextBlock Hint(string text) => new() { Text = text, FontSize = 12, Opacity = .65, TextWrapping = TextWrapping.Wrap };
+    static TextBlock Hint(string text) => PanelTheme.Hint(text);
     static Border Separator() => new() { Height = 1, Background = new SolidColorBrush(Color.FromArgb(25, 128, 128, 128)) };
     static ComboBox Combo(string label, params string[] items)
     {
@@ -368,8 +373,10 @@ internal sealed partial class SettingsWindow : PanelWindow
         saveTimer.Stop(); saveTimer.Start();
     }
 
-    internal void FlushChanges(bool force = false)
+    internal bool FlushChanges(bool force = false)
     {
+        if (!SaveToolbarLayout()) { status.Text = "顶栏布局保存失败，请重试"; return false; }
+        if (!SaveUiStyle()) { status.Text = "界面风格保存失败，请重试"; return false; }
         if (expandedQueued) { expandedQueued = false; ApplyExpandedPreview(); }
         if (heightQueued) { heightQueued = false; ApplyHeightPreview(); }
         if (previewQueued) { previewQueued = false; ApplyPreview(); }
@@ -377,24 +384,28 @@ internal sealed partial class SettingsWindow : PanelWindow
         if (force && expandedEnabled.IsOn && expandedMode.SelectedIndex == (int)ExpandedMode.Custom && !MaterialOptions.IsColor(expandedColor.Text))
         {
             status.Text = "全屏底色格式有误，请修正后保存";
-            return;
+            return false;
         }
         if (force && !automatic.IsOn && !MaterialOptions.IsColor(colorInput.Text))
         {
             status.Text = "颜色格式有误，请修正后保存";
-            return;
+            return false;
         }
         if (force) dirty = true;
-        if (!dirty) return;
+        if (!dirty) return true;
         try
         {
             preferences.SaveCurrent(); dirty = false;
             status.Text = force ? $"全部设置已保存 · {DateTime.Now:HH:mm:ss}" : "已保存，下次启动继续使用";
             // Keep the slider under the pointer during dragging; re-anchor after the pause.
             if (heightMoved) { heightMoved = false; Reposition(display.Info.Work.Top); }
+            return true;
         }
-        catch { ShowSaveError(); }
+        catch { ShowSaveError(); return false; }
     }
+
+    internal async Task<bool> SaveAllSettings()
+    { return SaveGuardOptions() && SaveAiSettings(AiCustomSelected) && await SaveStationSettings() && FlushChanges(force: true); }
 
     internal void ShowSaveError() => status.Text = "效果已预览，但保存失败；请检查数据目录权限";
 

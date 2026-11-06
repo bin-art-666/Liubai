@@ -62,6 +62,7 @@ internal sealed class ClockService
         catch (Exception ex) when (ex is not OutOfMemoryException) { error = "提醒操作未保存，请打开时钟重试。"; }
         Pulse?.Invoke();
     }
+    internal async Task FlushForMaintenance() { await coordinator.Flush(); await store.Flush(); }
     internal async Task Stop()
     {
         if (stopped) return;

@@ -15,7 +15,7 @@ public sealed partial class BarWindow
             await Task.Delay(500);
             if (SessionState.Locked == true) throw new InvalidOperationException("Desktop is locked; unlock before guard visual checks.");
             if (App.Guard.Wanted || App.Guard.State != GuardState.Off || App.Guard.Samples != 0) throw new Exception("Camera must default off");
-            if (CurrentToolbarOrder()[^2] != "guard" || AutomationProperties.GetName(guardButton) != "屏幕守护") throw new Exception("Guard toolbar entry missing");
+            if (!CurrentToolbarOrder().Contains("guard") || AutomationProperties.GetName(guardButton) != "屏幕守护") throw new Exception("Guard toolbar entry missing");
             var fake = new VerificationGuardFactory();
             var options = new GuardOptionsStore(Path.Combine(App.DataDirectory, "guard-fixture.json"));
             service = new GuardService(options, DispatcherQueue, fake); service.SetSuspended(false);
@@ -98,7 +98,7 @@ public sealed partial class BarWindow
                 for (int i = 0; i < 120 && App.Guard.State == GuardState.Starting; i++) await Task.Delay(100);
                 if (App.Guard.State == GuardState.Running) await Task.Delay(8000);
                 process.Refresh();
-                hardware = new { state = App.Guard.State.ToString(), status = App.Guard.Status, samples = App.Guard.Samples, lastFaces = App.Guard.LastFaces,
+                hardware = new { state = App.Guard.State.ToString(), status = App.GuardStatus, samples = App.Guard.Samples, lastFaces = App.Guard.LastFaces,
                     meanAnalysisMs = App.Guard.MeanProcessingMilliseconds, cpuPercent = (process.TotalProcessorTime - cpu).TotalMilliseconds / watch.Elapsed.TotalMilliseconds / Environment.ProcessorCount * 100,
                     privateMemoryDeltaMiB = (process.PrivateMemorySize64 - memory) / 1048576d };
                 await App.Guard.SetEnabled(false);

@@ -11,11 +11,12 @@ internal sealed class AiService
     internal bool ModalActive => window?.ModalActive == true;
     internal string Status => window?.Status ?? "点击展开 AI 面板，右上角可放大为独立窗口。";
     internal event Action? Changed;
-    internal AiService(string directory)
+    internal AiService(string directory, AiOptionsStore? options = null)
     {
-        this.directory = directory; Options = new(Path.Combine(directory, "ai.json"));
-        Options.Changed += () => { window?.ApplyOptions(); Changed?.Invoke(); };
+        this.directory = directory; Options = options ?? new(Path.Combine(directory, "ai.json"));
+        Options.Changed += OptionsChanged;
     }
+    void OptionsChanged() { window?.ApplyOptions(); Changed?.Invoke(); }
     internal void Select(string provider) => Options.Save(Options.Data with { Provider = provider });
     internal async Task Open(DesktopMonitor display, int? top = null)
     {
@@ -26,5 +27,5 @@ internal sealed class AiService
     internal void Hide(bool includeDetached = true) { if (includeDetached) window?.Hide(); else window?.HideDocked(); }
     internal Task<bool> ReceiveDrop(Windows.ApplicationModel.DataTransfer.DataPackageView view) => window?.ReceiveDrop(view) ?? throw new IOException("请先打开 AI 面板。");
     internal void UpdateDisplay(DesktopMonitor display) { if (window?.DisplayDevice == display.Device) window.UpdateDisplay(display); }
-    internal void Stop() { window?.Destroy(); window = null; }
+    internal void Stop() { Options.Changed -= OptionsChanged; window?.Destroy(); window = null; }
 }

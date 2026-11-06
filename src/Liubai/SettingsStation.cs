@@ -14,6 +14,12 @@ internal sealed partial class SettingsWindow
 
     Expander BuildStationSettings()
     {
+        var section = new Expander { Header = "中转站设置", HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Stretch };
+        section.Expanding += (_, _) => { section.Content ??= BuildStationSettingsContent(); RefreshStationSettings(); };
+        return section;
+    }
+    StackPanel BuildStationSettingsContent()
+    {
         var panel = new StackPanel { Spacing = 12 };
         stationCapacity = new NumberBox { Header = "最多保存项目数", Minimum = 1, Maximum = StationStore.MaximumCapacity,
             SmallChange = 1, LargeChange = 50, SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Inline, Value = App.Station.Capacity };
@@ -48,7 +54,7 @@ internal sealed partial class SettingsWindow
         stationCapacity.ValueChanged += async (_, _) => { if (!stationSync && interactive && !syncing) await SaveStationSettings(); };
         stationRemoveArchived.Toggled += async (_, _) => { if (!stationSync && interactive && !syncing) await SaveStationSettings(); };
         RefreshStationSettings();
-        return new Expander { Header = "中转站设置", Content = panel, HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Stretch };
+        return panel;
     }
     void RefreshStationSettings()
     {

@@ -35,9 +35,16 @@ public sealed partial class BarWindow
         var archive = StationControls<Button>(stationRoot).Single(b => AutomationProperties.GetName(b) == "归档到文件夹");
         if (archive.Parent is not StackPanel header || header.Children[0] is not Button clear || AutomationProperties.GetName(clear) != "清空中转站" || header.Children[1] != archive
             || header.Children.Count != 5) throw new Exception("Header actions must precede expand, pin and close");
-        var pending = stationWindow.Archive(); await Task.Delay(150);
-        var dialog = VisualTreeHelper.GetOpenPopupsForXamlRoot(((FrameworkElement)stationWindow.Content).XamlRoot)
-            .SelectMany(p => p.Child is { } child ? StationControls<ContentDialog>(child) : []).SingleOrDefault();
+        var pending = stationWindow.Archive();
+        ContentDialog? dialog = null;
+        long deadline = Environment.TickCount64 + 3000;
+        do
+        {
+            dialog = VisualTreeHelper.GetOpenPopupsForXamlRoot(((FrameworkElement)stationWindow.Content).XamlRoot)
+                .SelectMany(p => p.Child is { } child ? StationControls<ContentDialog>(child) : []).SingleOrDefault();
+            if (dialog != null || pending.IsCompleted) break;
+            await Task.Delay(50);
+        } while (Environment.TickCount64 < deadline);
         if (dialog?.Title as string != "归档全部项目？" || dialog.DefaultButton != ContentDialogButton.Close
             || !StationControls<CheckBox>((DependencyObject)dialog.Content).Single().IsChecked.GetValueOrDefault()) throw new Exception("Archive confirmation/default selection missing");
         dialog.Hide(); await pending;

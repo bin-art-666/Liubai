@@ -3,21 +3,40 @@ namespace Liubai;
 internal sealed class WorkHub
 {
     internal WorkStore Store { get; }
-    readonly PlannerStore planner;
-    readonly StationStore station;
-    readonly HashSet<WorkRef> known;
+    readonly Func<PlannerStore> getPlanner;
+    readonly Func<StationStore> getStation;
+    PlannerStore? plannerSource;
+    StationStore? stationSource;
+    PlannerStore planner => getPlanner();
+    StationStore station => getStation();
+    readonly HashSet<WorkRef> known = [];
     readonly HashSet<Task> pending = [];
     internal string? LastError { get; private set; }
     internal WorkHub(string directory, PlannerStore planner, StationStore station)
+        : this(new WorkStore(Path.Combine(directory, "workspaces.json")), () => planner, () => station)
     {
-        Store = new(Path.Combine(directory, "workspaces.json")); this.planner = planner; this.station = station;
-        known = All().ToHashSet(); planner.Changed += Track; station.Changed += Track;
+        Attach(planner); Attach(station);
     }
+    internal WorkHub(WorkStore store, Func<PlannerStore> planner, Func<StationStore> station)
+    { Store = store; getPlanner = planner; getStation = station; }
+    internal void Attach(PlannerStore source)
+    {
+        if (plannerSource != null) return;
+        plannerSource = source; known.UnionWith(Loaded()); source.Changed += Track;
+    }
+    internal void Attach(StationStore source)
+    {
+        if (stationSource != null) return;
+        stationSource = source; known.UnionWith(Loaded()); source.Changed += Track;
+    }
+    IEnumerable<WorkRef> Loaded() => (stationSource?.Items.Select(i => new WorkRef(WorkKind.Station, i.Id, new(i.Kind.ToString(), i.Value, i.Title))) ?? [])
+        .Concat(plannerSource?.Data.Tasks.Select(i => new WorkRef(WorkKind.Task, i.Id)) ?? [])
+        .Concat(plannerSource?.Data.Notes.Select(i => new WorkRef(WorkKind.Note, i.Id)) ?? []);
     internal IEnumerable<WorkRef> All() => station.Items.Select(i => new WorkRef(WorkKind.Station, i.Id, new(i.Kind.ToString(), i.Value, i.Title)))
         .Concat(planner.Data.Tasks.Select(i => new WorkRef(WorkKind.Task, i.Id))).Concat(planner.Data.Notes.Select(i => new WorkRef(WorkKind.Note, i.Id)));
     void Track()
     {
-        var current = All().ToHashSet(); var added = current.Except(known).ToArray(); known.Clear(); known.UnionWith(current);
+        var current = Loaded().ToHashSet(); var added = current.Except(known).ToArray(); known.Clear(); known.UnionWith(current);
         if (added.Length == 0 || Store.Data.Active is not { } scene) return;
         var task = Store.Link(scene, added); pending.Add(task); _ = Finish(task);
     }

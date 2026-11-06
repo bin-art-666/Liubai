@@ -5,7 +5,7 @@
     <TargetPlatformMinVersion>10.0.22000.0</TargetPlatformMinVersion>
     <AssemblyName>Liubai</AssemblyName>
     <RootNamespace>Liubai</RootNamespace>
-    <Version>0.6.0</Version>
+    <Version>0.7.0</Version>
     <Platforms>x64</Platforms>
     <PlatformTarget>x64</PlatformTarget>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
@@ -22,6 +22,7 @@
   <ItemGroup>
     <PackageReference Include="ZXing.Net" Version="0.16.11" />
     <Content Include="Assets\Liubai.ico" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="Assets\UpdateWorker.ps1" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Content Include="../../ThirdParty/*.txt" Link="ThirdParty/%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <PackageReference Include="Microsoft.WindowsAppSDK.WinUI" Version="2.6.4" />
     <PackageReference Include="Microsoft.WindowsAppSDK.Runtime" Version="2.6.4" />
@@ -37,6 +38,7 @@
     <ItemGroup>
       <ResolvedFileToPublish Include="$(TargetDir)resources.pri" RelativePath="resources.pri" CopyToPublishDirectory="PreserveNewest" />
       <ResolvedFileToPublish Include="$(TargetDir)App.xbf" RelativePath="App.xbf" CopyToPublishDirectory="PreserveNewest" />
+      <ResolvedFileToPublish Include="$(TargetDir)Theme.xbf" RelativePath="Theme.xbf" CopyToPublishDirectory="PreserveNewest" />
     </ItemGroup>
   </Target>
 </Project>

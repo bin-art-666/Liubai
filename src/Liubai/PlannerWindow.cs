@@ -25,7 +25,7 @@ internal sealed partial class PlannerWindow : PanelWindow
     readonly TextBox noteEditor = new() { PlaceholderText = "随手记下想法……内容会自动保存", AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MaxLength = 20000, Height = 180 };
     readonly TextBox noteSearch = new() { PlaceholderText = "搜索记录", MaxLength = 200 };
     readonly TextBlock status = Hint("内容保存在本机，自动保存");
-    readonly Button saveButton = IconButton("\uE74E", "立即保存", fontSize: 17);
+    readonly Button saveButton = IconButton("\uE74E", "立即保存");
     readonly TextBlock reminderWarning = Hint("");
     readonly Button undoButton = new() { Content = "撤销删除", Visibility = Visibility.Collapsed };
     readonly ToggleButton tasksTab = new() { Content = "待办" }, notesTab = new() { Content = "随手记" };
@@ -51,7 +51,7 @@ internal sealed partial class PlannerWindow : PanelWindow
         int corner = 2, border = unchecked((int)0xFFFFFFFE);
         Native.DwmSetWindowAttribute(handle, 33, ref corner, sizeof(int));
         Native.DwmSetWindowAttribute(handle, 34, ref border, sizeof(int));
-        SystemBackdrop = new GlassBackdrop(GlassStyle.Frosted);
+        SystemBackdrop = PanelTheme.Backdrop();
         saveTimer = DispatcherQueue.CreateTimer(); saveTimer.Interval = TimeSpan.FromMilliseconds(400); saveTimer.IsRepeating = false;
         saveTimer.Tick += async (_, _) => await FlushAsync();
         dayTimer = DispatcherQueue.CreateTimer(); dayTimer.Interval = TimeSpan.FromMinutes(1);
@@ -60,20 +60,17 @@ internal sealed partial class PlannerWindow : PanelWindow
             var today = DateOnly.FromDateTime(DateTime.Now);
             if (shownDay != today) { shownDay = today; RefreshLists(); }
         };
-        var root = new Grid { Padding = new Thickness(20, 16, 20, 16), RowSpacing = 12 };
+        var root = PanelTheme.Layout();
         root.RowDefinitions.Add(new() { Height = GridLength.Auto });
         root.RowDefinitions.Add(new() { Height = new GridLength(1, GridUnitType.Star) });
         root.RowDefinitions.Add(new() { Height = GridLength.Auto });
-        var header = new Grid { ColumnSpacing = 12 };
-        header.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) });
-        header.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
         var tabs = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
-        tabs.Children.Add(tasksTab); tabs.Children.Add(notesTab); header.Children.Add(tabs);
+        tabs.Children.Add(tasksTab); tabs.Children.Add(notesTab);
         var close = IconButton("\uE8BB", "收起待办与随手记");
-        var controls = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
+        var controls = PanelTheme.Actions();
         saveButton.Click += async (_, _) => await FlushAsync();
         controls.Children.Add(saveButton); controls.Children.Add(close);
-        Grid.SetColumn(controls, 1); header.Children.Add(controls);
+        var header = PanelTheme.Header(tabs, controls);
         close.Click += (_, _) => Hide(); root.Children.Add(header);
         var pages = new Grid(); pages.Children.Add(tasksPage); pages.Children.Add(notesPage);
         var scroll = new ScrollViewer { Content = pages, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
@@ -122,14 +119,9 @@ internal sealed partial class PlannerWindow : PanelWindow
             foreach (var control in tasksPage.Children.Concat(notesPage.Children).OfType<Control>()) control.IsEnabled = false;
     }
 
-    static TextBlock Hint(string text) => new() { Text = text, FontSize = 12, Opacity = .7, TextWrapping = TextWrapping.Wrap };
+    static TextBlock Hint(string text) => PanelTheme.Hint(text);
     static void Name(DependencyObject element, string name) => AutomationProperties.SetName(element, name);
-    static Button IconButton(string glyph, string name, double fontSize = 13)
-    {
-        var button = new Button { Content = new FontIcon { Glyph = glyph, FontSize = fontSize }, Width = 30, Height = 30,
-            MinWidth = 0, MinHeight = 0, Padding = new Thickness(0), BorderThickness = new Thickness(0), Background = new SolidColorBrush(Colors.Transparent) };
-        Name(button, name); ToolTipService.SetToolTip(button, name); return button;
-    }
+    static Button IconButton(string glyph, string name, double? fontSize = null) => PanelTheme.Icon(glyph, name, fontSize);
     static DateOnly? DateOf(CalendarDatePicker picker) => picker.Date is { } value ? DateOnly.FromDateTime(value.Date) : null;
     static DateTimeOffset? CalendarDate(DateOnly? date) => date is { } value ? new DateTimeOffset(value.ToDateTime(TimeOnly.MinValue)) : null;
 
@@ -183,7 +175,7 @@ internal sealed partial class PlannerWindow : PanelWindow
         noteDirty = false;
         RefreshNoteImages();
     }
-    void StoreChanged() => DispatcherQueue.TryEnqueue(() => { if (!destroyed) RefreshLists(); });
+    void StoreChanged() => DispatcherQueue.TryEnqueue(() => { if (!destroyed && IsOpen) RefreshLists(); });
     void ReminderStatus() => DispatcherQueue.TryEnqueue(() =>
     {
         if (destroyed) return;
@@ -325,7 +317,7 @@ internal sealed partial class PlannerWindow : PanelWindow
     {
         display = monitor;
         if (!await SwitchPage(target)) return;
-        Reposition(barBottom); ShowPanel(); dayTimer.Start();
+        Reposition(barBottom); RefreshNoteImages(); ShowPanel(); dayTimer.Start();
         DispatcherQueue.TryEnqueue(() => { if (IsOpen) (page == PlannerPage.Tasks ? taskTitle : noteEditor).Focus(FocusState.Programmatic); });
     }
     internal void UpdateDisplay(DesktopMonitor monitor) { display = monitor; if (IsOpen) Reposition(monitor.Info.Work.Top); }
@@ -338,5 +330,11 @@ internal sealed partial class PlannerWindow : PanelWindow
         int height = Math.Max(120, Math.Min((int)Math.Round(700 * scale), work.Bottom - top - margin));
         AppWindow.MoveAndResize(new RectInt32(work.Right - width - margin, top, width, height));
     }
-    protected override void OnHiding() { dayTimer.Stop(); _ = FlushAsync(); }
+    protected override void OnHiding() { dayTimer.Stop(); _ = SaveAndReleaseView(); }
+    async Task SaveAndReleaseView()
+    {
+        await FlushAsync();
+        if (destroyed || IsOpen) return;
+        taskList.Children.Clear(); noteList.Children.Clear(); noteImages.Children.Clear();
+    }
 }

@@ -12,7 +12,7 @@ namespace Liubai;
 internal sealed class ClockWindow : PanelWindow
 {
     readonly ClockStore store;
-    readonly Grid root = new() { Padding = new Thickness(20, 16, 20, 16), RowSpacing = 12 };
+    readonly Grid root = PanelTheme.Layout();
     readonly ToggleButton alarmTab = new() { Content = "闹钟" }, timerTab = new() { Content = "计时" };
     readonly StackPanel alarmPage = new() { Spacing = 12 }, timerPage = new() { Spacing = 12 }, alarmList = new() { Spacing = 8 };
     readonly TextBlock status = Hint("添加闹钟或开始计时后自动保存"), warning = Hint(""), alarmPreview = Hint("");
@@ -39,11 +39,11 @@ internal sealed class ClockWindow : PanelWindow
         presenter.IsResizable = presenter.IsMaximizable = presenter.IsMinimizable = false; AppWindow.IsShownInSwitchers = false;
         int corner = 2, border = unchecked((int)0xFFFFFFFE); var handle = WinRT.Interop.WindowNative.GetWindowHandle(this);
         Native.DwmSetWindowAttribute(handle, 33, ref corner, sizeof(int)); Native.DwmSetWindowAttribute(handle, 34, ref border, sizeof(int));
-        SystemBackdrop = new GlassBackdrop(GlassStyle.Frosted);
+        SystemBackdrop = PanelTheme.Backdrop();
         root.RowDefinitions.Add(new() { Height = GridLength.Auto }); root.RowDefinitions.Add(new() { Height = new GridLength(1, GridUnitType.Star) }); root.RowDefinitions.Add(new() { Height = GridLength.Auto });
-        var header = new Grid(); var tabs = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
-        tabs.Children.Add(alarmTab); tabs.Children.Add(timerTab); header.Children.Add(tabs);
-        var close = Icon("\uE8BB", "收起时钟"); close.HorizontalAlignment = HorizontalAlignment.Right; close.Click += (_, _) => Hide(); header.Children.Add(close); root.Children.Add(header);
+        var tabs = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        tabs.Children.Add(alarmTab); tabs.Children.Add(timerTab);
+        var close = Icon("\uE8BB", "收起时钟"); close.HorizontalAlignment = HorizontalAlignment.Right; close.Click += (_, _) => Hide(); root.Children.Add(PanelTheme.Header(tabs, close));
         // WinUI's overlay scrollbar otherwise covers the final input/spin button.
         var pages = new Grid { Margin = new Thickness(0, 0, 16, 0) }; pages.Children.Add(alarmPage); pages.Children.Add(timerPage);
         var scroll = new ScrollViewer { Content = pages, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled }; Grid.SetRow(scroll, 1); root.Children.Add(scroll);
@@ -85,19 +85,14 @@ internal sealed class ClockWindow : PanelWindow
         InitializePanel(root); SelectPage(false);
     }
     static void Name(DependencyObject element, string name) => AutomationProperties.SetName(element, name);
-    static TextBlock Hint(string text) => new() { Text = text, FontSize = 12, Opacity = .7, TextWrapping = TextWrapping.Wrap };
+    static TextBlock Hint(string text) => PanelTheme.Hint(text);
     static NumberBox Number(string header, int maximum, int initial)
     {
         var box = new NumberBox { Header = header, Minimum = 0, Maximum = maximum, Value = initial, SmallChange = 1,
             SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Compact, HorizontalAlignment = HorizontalAlignment.Stretch, MinWidth = 0 };
         Name(box, "计时" + header); return box;
     }
-    static Button Icon(string glyph, string name)
-    {
-        var button = new Button { Content = new FontIcon { Glyph = glyph, FontSize = 14 }, Width = 30, Height = 30, MinWidth = 0, MinHeight = 0,
-            Padding = new Thickness(0), BorderThickness = new Thickness(0), Background = new SolidColorBrush(Colors.Transparent) };
-        Name(button, name); ToolTipService.SetToolTip(button, name); return button;
-    }
+    static Button Icon(string glyph, string name) => PanelTheme.Icon(glyph, name);
     bool ActiveCountdown => store.Data.Countdown?.State is ClockState.Running or ClockState.Paused;
     TimeOnly SelectedAlarm() => alarmTime.SelectedTime is { } time ? new(time.Hours, time.Minutes) : throw new InvalidDataException("请先选择提醒时间。");
     int Duration()
@@ -151,7 +146,7 @@ internal sealed class ClockWindow : PanelWindow
             var edit = Icon("\uE70F", "编辑闹钟"); edit.IsEnabled = !store.ReadOnly; edit.Click += async (_, _) => await Edit(item);
             var remove = Icon("\uE74D", "删除闹钟"); remove.IsEnabled = !store.ReadOnly; remove.Click += async (_, _) => await Run(async () => await store.RemoveAlarm(item.Id));
             controls.Children.Add(toggle); controls.Children.Add(edit); controls.Children.Add(remove); Grid.SetColumn(controls, 1); card.Children.Add(controls);
-            alarmList.Children.Add(new Border { Child = card, Padding = new Thickness(12), CornerRadius = new CornerRadius(10), Background = new SolidColorBrush(Windows.UI.Color.FromArgb(22, 128, 128, 128)) });
+            alarmList.Children.Add(PanelTheme.Card(card));
         }
     }
     void UpdateTime()

@@ -24,12 +24,8 @@ public sealed partial class BarWindow
     void InitializeToolbarReorder(Grid layers)
     {
         toolbarLayers = layers;
-        Button[] buttons = [screenshot, qrScan, clockButton, todo, quickNote, shelf, guardButton, privacyButton, aiButton, settings];
-        for (int i = 0; i < buttons.Length; i++)
-        {
-            var button = buttons[i]; toolbarButtons.Add(ToolbarOrder.Defaults[i], button);
+        foreach (var button in toolbarButtons.Values)
             button.AddHandler(UIElement.PointerPressedEvent, new PointerEventHandler((_, e) => ToolbarPressed(button, e)), true);
-        }
         toolbarMarker = new Border { Width = 2, Height = 18, CornerRadius = new CornerRadius(1), HorizontalAlignment = HorizontalAlignment.Left,
             VerticalAlignment = VerticalAlignment.Center, IsHitTestVisible = false, Visibility = Visibility.Collapsed };
         layers.Children.Add(toolbarMarker);
@@ -59,7 +55,7 @@ public sealed partial class BarWindow
     {
         if (!e.KeyModifiers.HasFlag(VirtualKeyModifiers.Control) || !e.GetCurrentPoint(button).Properties.IsLeftButtonPressed) return;
         e.Handled = true; suppressToolbarClickUntil = Environment.TickCount64 + 250;
-        if (closing || PanelModal || manager?.HasModal == true || draggedToolbarButton != null) return;
+        if (closing || PanelModal || manager?.HasModal == true || draggedToolbarButton != null || !ReferenceEquals(button.Parent, actions) || button.Visibility != Visibility.Visible) return;
         button.ReleasePointerCaptures();
         if (!actions.CapturePointer(e.Pointer)) return;
         BeginToolbarDrag(button, e.GetCurrentPoint(actions).Position);
@@ -71,7 +67,7 @@ public sealed partial class BarWindow
         button.Opacity = .55; screenshotTip.IsOpen = false; if (qrTip != null) qrTip.IsOpen = false;
         button.Focus(FocusState.Programmatic);
     }
-    string[] CurrentToolbarOrder() => actions.Children.OfType<Button>().Select(b => toolbarButtons.First(p => ReferenceEquals(p.Value, b)).Key).ToArray();
+    string[] CurrentToolbarOrder() => toolbarOrder.ToArray();
     bool InsideToolbar(Point point) => point.X >= 0 && point.X <= actions.ActualWidth && point.Y >= 0 && point.Y <= actions.ActualHeight;
     void MoveToolbarDrag(Point point, bool controlHeld)
     {
@@ -79,13 +75,17 @@ public sealed partial class BarWindow
         if (!controlHeld) { FinishToolbarDrag(false); return; }
         if (!toolbarMoved && Math.Abs(point.X - toolbarPressPoint.X) < 4 && Math.Abs(point.Y - toolbarPressPoint.Y) < 4) return;
         toolbarMoved = true;
-        int index = actions.Children.OfType<Button>().Where(b => !ReferenceEquals(b, button)).Count(b =>
+        var visible = actions.Children.OfType<Button>().Where(b => !ReferenceEquals(b, button) && b.Visibility == Visibility.Visible && toolbarButtons.Values.Contains(b)).ToArray();
+        int slot = visible.Count(b =>
         {
             double left = b.TransformToVisual(actions).TransformPoint(new Point()).X;
             return point.X > left + b.ActualWidth / 2;
         });
         string id = toolbarButtons.First(p => ReferenceEquals(p.Value, button)).Key;
-        var current = CurrentToolbarOrder(); var order = ToolbarOrder.Move(current, id, index);
+        var current = CurrentToolbarOrder(); var others = current.Where(value => value != id).ToArray();
+        int index = slot < visible.Length ? Array.IndexOf(others, toolbarButtons.First(p => ReferenceEquals(p.Value, visible[slot])).Key)
+            : visible.Length > 0 ? Array.IndexOf(others, toolbarButtons.First(p => ReferenceEquals(p.Value, visible[^1])).Key) + 1 : 0;
+        var order = ToolbarOrder.Move(current, id, index);
         if (!order.SequenceEqual(current)) { ApplyToolbarOrder(order); actions.UpdateLayout(); button.Focus(FocusState.Programmatic); }
         if (toolbarMarker != null && toolbarLayers != null)
         {
@@ -112,18 +112,26 @@ public sealed partial class BarWindow
             if (!closing) { OpenSettings(); settingsWindow?.ShowSaveError(); }
         }
     }
-    void ToolbarOrderChanged() => DispatcherQueue.TryEnqueue(() =>
+    void ToolbarOrderChanged()
     {
+        void Refresh()
+        {
         if (closing) return;
         FinishToolbarDrag(false); ApplyToolbarOrder(preferences.ToolbarItems);
-    });
+        }
+        if (DispatcherQueue.HasThreadAccess) Refresh(); else DispatcherQueue.TryEnqueue(Refresh);
+    }
     void ApplyToolbarOrder(IEnumerable<string> order)
     {
-        var expected = ToolbarOrder.Normalize(order).Select(id => toolbarButtons[id]).ToArray();
+        toolbarOrder = ToolbarOrder.Normalize(order);
+        if (moreWindow?.IsOpen == true) moreWindow.Hide();
+        var expected = toolbarOrder.Select(id => toolbarButtons[id]).ToArray();
         for (int i = 0; i < expected.Length; i++)
         {
+            if (!actions.Children.Contains(expected[i])) actions.Children.Add(expected[i]);
             var button = expected[i]; if (ReferenceEquals(actions.Children[i], button)) continue;
             actions.Children.Remove(button); actions.Children.Insert(i, button);
         }
+        ReflowToolbar();
     }
 }

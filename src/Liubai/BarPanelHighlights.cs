@@ -11,15 +11,11 @@ public sealed partial class BarWindow
     void RefreshPanelHighlights()
     {
         if (closing) return;
-        var planner = plannerWindow ?? manager?.CurrentPlanner;
-        bool plannerHere = planner?.IsOpen == true && planner.DisplayDevice == Display.Device;
-        SetPanelHighlight(todo, plannerHere && planner!.Page == PlannerPage.Tasks);
-        SetPanelHighlight(quickNote, plannerHere && planner!.Page == PlannerPage.Notes);
-        SetPanelHighlight(aiButton, App.Ai.IsOpen && App.Ai.DisplayDevice == Display.Device);
-        SetPanelHighlight(shelf, stationWindow?.IsOpen == true || workSceneWindow?.IsOpen == true);
+        if (tools != null)
+            foreach (var definition in ToolCatalog.BuiltIn.Items.Where(tool => tool.Kind == ToolKind.Panel))
+                SetPanelHighlight(toolbarButtons[definition.Id], tools.Active(definition.Id));
         SetPanelHighlight(focusEntry, focusWindow?.IsOpen == true);
-        SetPanelHighlight(settings, settingsWindow?.IsOpen == true);
-        SetPanelHighlight(clockButton, clockWindow?.IsOpen == true);
+        if (moreButton != null) SetPanelHighlight(moreButton, moreWindow?.IsOpen == true);
     }
     static void SetPanelHighlight(Button button, bool active)
     {

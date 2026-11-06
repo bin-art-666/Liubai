@@ -22,18 +22,17 @@ internal sealed class QrResultWindow : PanelWindow
         AppWindow.IsShownInSwitchers = false;
         int border = unchecked((int)0xFFFFFFFE);
         Native.DwmSetWindowAttribute(WinRT.Interop.WindowNative.GetWindowHandle(this), 34, ref border, sizeof(int));
-        var root = new Grid { Padding = new Thickness(22), RowSpacing = 16, Background = new SolidColorBrush(Colors.Transparent) };
+        var root = PanelTheme.Layout();
         root.RowDefinitions.Add(new() { Height = GridLength.Auto }); root.RowDefinitions.Add(new() { Height = new GridLength(1, GridUnitType.Star) });
         root.RowDefinitions.Add(new() { Height = GridLength.Auto });
-        var header = new Grid(); header.Children.Add(new TextBlock { Text = "扫码结果", FontSize = 21 });
-        var close = new Button { Content = "关闭", HorizontalAlignment = HorizontalAlignment.Right }; close.Click += (_, _) => Hide(); header.Children.Add(close);
-        root.Children.Add(header);
+        var close = PanelTheme.Icon("\uE8BB", "收起扫码结果"); close.Click += (_, _) => Hide();
+        root.Children.Add(PanelTheme.Header(PanelTheme.Title("扫码结果"), close));
         var scroll = new ScrollViewer { Content = results, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
         Grid.SetRow(scroll, 1); root.Children.Add(scroll);
         var footer = new StackPanel { Spacing = 12 }; footer.Children.Add(status);
         var again = new Button { Content = "重新框选" }; again.Click += (_, _) => { Hide(); this.retry(); }; footer.Children.Add(again);
         Grid.SetRow(footer, 2); root.Children.Add(footer); InitializePanel(root);
-        SystemBackdrop = new GlassBackdrop(MaterialOptions.ForPreset(GlassStyle.Frosted));
+        SystemBackdrop = PanelTheme.Backdrop();
     }
     internal void Open(string[] values, DesktopMonitor monitor, int top, string? message = null)
     {
@@ -61,7 +60,7 @@ internal sealed class QrResultWindow : PanelWindow
                 };
                 buttons.Children.Add(open);
             }
-            card.Children.Add(buttons); results.Children.Add(card);
+            card.Children.Add(buttons); results.Children.Add(PanelTheme.Card(card));
         }
         Position(monitor, top); ShowPanel();
     }

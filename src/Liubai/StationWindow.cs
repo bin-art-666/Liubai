@@ -20,7 +20,7 @@ internal sealed partial class StationWindow : PanelWindow
     readonly ToggleButton pin = new();
     readonly Button expand = IconButton("\uE740", "展开为独立窗口");
     readonly Button clear = ItemAction("清空中转站", SweepPath, header: true);
-    readonly Grid root = new() { Padding = new Thickness(20, 16, 20, 16), RowSpacing = 12, Background = new SolidColorBrush(Colors.Transparent), AllowDrop = true };
+    readonly Grid root = PanelTheme.Layout();
     readonly Microsoft.UI.Dispatching.DispatcherQueueTimer leaveTimer;
     readonly StationPanelLayout panelLayout;
     readonly Microsoft.UI.Dispatching.DispatcherQueueTimer layoutTimer;
@@ -42,6 +42,7 @@ internal sealed partial class StationWindow : PanelWindow
         this.store = store; this.display = display; Title = "留白 · 中转站";
         panelLayout = new(store.WindowLayoutPath); dockLayout = panelLayout.Data;
         if (panelLayout.Data.Floating is { } saved) floatingBounds = new(saved.X, saved.Y, saved.Width, saved.Height);
+        root.AllowDrop = true;
         var presenter = (OverlappedPresenter)AppWindow.Presenter;
         presenter.SetBorderAndTitleBar(false, false);
         presenter.IsResizable = presenter.IsMaximizable = presenter.IsMinimizable = false; presenter.IsAlwaysOnTop = true;
@@ -49,7 +50,7 @@ internal sealed partial class StationWindow : PanelWindow
         int corner = 2, border = unchecked((int)0xFFFFFFFE);
         var handle = WinRT.Interop.WindowNative.GetWindowHandle(this);
         Native.DwmSetWindowAttribute(handle, 33, ref corner, sizeof(int)); Native.DwmSetWindowAttribute(handle, 34, ref border, sizeof(int));
-        SystemBackdrop = new GlassBackdrop(GlassStyle.Frosted);
+        SystemBackdrop = PanelTheme.Backdrop();
         leaveTimer = DispatcherQueue.CreateTimer(); leaveTimer.IsRepeating = false; leaveTimer.Interval = TimeSpan.FromMilliseconds(550);
         leaveTimer.Tick += (_, _) => { if (openedForDrop && !Pinned && !busy) Hide(); };
         layoutTimer = DispatcherQueue.CreateTimer(); layoutTimer.IsRepeating = false; layoutTimer.Interval = TimeSpan.FromMilliseconds(400);
@@ -57,18 +58,15 @@ internal sealed partial class StationWindow : PanelWindow
         AppWindow.Changed += (_, e) => { if (Detached && !destroyed && (e.DidPositionChange || e.DidSizeChange)) { layoutTimer.Stop(); layoutTimer.Start(); } };
         root.RowDefinitions.Add(new() { Height = GridLength.Auto }); root.RowDefinitions.Add(new() { Height = GridLength.Auto });
         root.RowDefinitions.Add(new() { Height = new GridLength(1, GridUnitType.Star) }); root.RowDefinitions.Add(new() { Height = GridLength.Auto });
-        var header = new Grid { ColumnSpacing = 10 };
-        header.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) }); header.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
-        var titleGrip = new Border { Background = new SolidColorBrush(Colors.Transparent), Child = new TextBlock { Text = "中转站", FontSize = 23, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold } };
-        header.Children.Add(titleGrip);
-        var controls = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
+        var titleGrip = new Border { Background = new SolidColorBrush(Colors.Transparent), Child = PanelTheme.Title("中转站") };
+        var controls = PanelTheme.Actions();
         StyleIconButton(pin, "固定中转站"); pin.Content = Glyph("\uE718");
         var close = IconButton("\uE8BB", "收起中转站");
         expand.Click += (_, _) => ToggleDetached(); close.Click += (_, _) => Hide();
         controls.Children.Add(clear); controls.Children.Add(archive);
         expand.Margin = new Thickness(8, 0, 0, 0);
         controls.Children.Add(expand); controls.Children.Add(pin); controls.Children.Add(close);
-        Grid.SetColumn(controls, 1); header.Children.Add(controls); root.Children.Add(header);
+        var header = PanelTheme.Header(titleGrip, controls); root.Children.Add(header);
         InitializeFloatingCaption(header, controls, () => Detached);
         var intro = new StackPanel { Spacing = 6 }; intro.Children.Add(introHint); intro.Children.Add(count);
         var work = new Button { Content = "工作现场", HorizontalAlignment = HorizontalAlignment.Left };
@@ -97,15 +95,9 @@ internal sealed partial class StationWindow : PanelWindow
         Closed += (_, _) => { destroyed = true; EndStationResize(true); layoutTimer.Stop(); archiveCancellation?.Cancel(); renderVersion++; CancelPreviews(); previewCache.Clear(); leaveTimer.Stop(); store.Changed -= StoreChanged; };
         var shell = new Grid(); shell.Children.Add(root); InitializeStationResize(shell); InitializePanel(shell);
     }
-    static TextBlock Hint(string text) => new() { Text = text, FontSize = 12, Opacity = .7, TextWrapping = TextWrapping.Wrap };
-    static FontIcon Glyph(string glyph) => new() { Glyph = glyph, FontSize = 15 };
-    static void StyleIconButton(ButtonBase button, string name)
-    {
-        button.Width = button.Height = 32; button.MinWidth = button.MinHeight = 0;
-        button.Padding = new Thickness(0); button.BorderThickness = new Thickness(0);
-        button.Background = new SolidColorBrush(Colors.Transparent);
-        AutomationProperties.SetName(button, name); ToolTipService.SetToolTip(button, name);
-    }
+    static TextBlock Hint(string text) => PanelTheme.Hint(text);
+    static FontIcon Glyph(string glyph) => PanelTheme.Glyph(glyph);
+    static void StyleIconButton(ButtonBase button, string name) => PanelTheme.IconStyle(button, name);
     static Button IconButton(string glyph, string name)
     { var button = new Button { Content = Glyph(glyph) }; StyleIconButton(button, name); return button; }
     void UpdatePin()
@@ -231,9 +223,9 @@ internal sealed partial class StationWindow : PanelWindow
         if (!Detached) viewAllAfterDrop.Visibility = Visibility.Collapsed;
         if (matches.Length == 0)
         {
-            cards.Children.Add(new Border { Padding = new Thickness(22, 36, 22, 36), CornerRadius = new CornerRadius(12), BorderThickness = new Thickness(1),
-                BorderBrush = new SolidColorBrush(Windows.UI.Color.FromArgb(35, 128, 128, 128)), Child = new TextBlock {
-                    Text = store.Items.Count == 0 ? "先放一下\n稍后接着用" : "没有匹配内容\n试试其他分类、时间或关键词", FontSize = 18, Opacity = .6, TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center } });
+            var empty = PanelTheme.Card(new TextBlock {
+                Text = store.Items.Count == 0 ? "先放一下\n稍后接着用" : "没有匹配内容\n试试其他分类、时间或关键词", FontSize = 18, Opacity = .6, TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center });
+            empty.Padding = new Thickness(22, 36, 22, 36); cards.Children.Add(empty);
             return;
         }
         string? group = null;
@@ -291,8 +283,7 @@ internal sealed partial class StationWindow : PanelWindow
         var remove = ItemAction("移除记录", TrashPath); remove.IsEnabled = !store.ReadOnly;
         remove.Click += async (_, _) => await Run(async () => { await store.Remove(item.Id); status.Text = "已移除记录，原文件未改动。"; }); buttons.Children.Add(remove);
         Grid.SetColumn(buttons, 1); body.Children.Add(buttons);
-        var card = new Border { Child = body, Padding = new Thickness(10), CornerRadius = new CornerRadius(12),
-            Background = DefaultCardBrush(), BorderThickness = new Thickness(1), BorderBrush = new SolidColorBrush(Windows.UI.Color.FromArgb(75, 255, 255, 255)) };
+        var card = PanelTheme.Card(body);
         cards.Children.Add(card);
         if (item.Kind is StationKind.File or StationKind.Folder) _ = LoadPreview(item, preview, card, meta, grip, copy, open, version, label, previewCancellation!.Token);
     }
@@ -320,5 +311,6 @@ internal sealed partial class StationWindow : PanelWindow
         SaveFloatingLayout();
         if (Detached) SaveQuery(); else searchTimer.Stop(); dayTimer.Stop();
         leaveTimer.Stop(); openedForDrop = false; pin.IsChecked = false; renderVersion++; CancelPreviews();
+        cards.Children.Clear(); previewCache.Clear();
     }
 }
