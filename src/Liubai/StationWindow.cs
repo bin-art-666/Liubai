@@ -19,7 +19,7 @@ internal sealed partial class StationWindow : PanelWindow
     readonly TextBlock status = Hint("");
     readonly ToggleButton pin = new();
     readonly Button expand = IconButton("\uE740", "展开为独立窗口");
-    readonly Button clear = new() { Content = "清空" };
+    readonly Button clear = ItemAction("清空中转站", SweepPath, header: true);
     readonly Grid root = new() { Padding = new Thickness(20, 16, 20, 16), RowSpacing = 12, Background = new SolidColorBrush(Colors.Transparent), AllowDrop = true };
     readonly Microsoft.UI.Dispatching.DispatcherQueueTimer leaveTimer;
     readonly StationPanelLayout panelLayout;
@@ -64,6 +64,8 @@ internal sealed partial class StationWindow : PanelWindow
         StyleIconButton(pin, "固定中转站"); pin.Content = Glyph("\uE718");
         var close = IconButton("\uE8BB", "收起中转站");
         expand.Click += (_, _) => ToggleDetached(); close.Click += (_, _) => Hide();
+        controls.Children.Add(clear); controls.Children.Add(archive);
+        expand.Margin = new Thickness(8, 0, 0, 0);
         controls.Children.Add(expand); controls.Children.Add(pin); controls.Children.Add(close);
         Grid.SetColumn(controls, 1); header.Children.Add(controls); root.Children.Add(header);
         InitializeFloatingCaption(header, controls, () => Detached);
@@ -72,9 +74,7 @@ internal sealed partial class StationWindow : PanelWindow
         var scroll = new ScrollViewer { Content = cards, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
         InitializeBrowser(scroll);
         var footer = new StackPanel { Spacing = 9 }; footer.Children.Add(status); footer.Children.Add(viewAllAfterDrop);
-        var footerActions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
-        footerActions.Children.Add(clear); footerActions.Children.Add(archive); footerActions.Children.Add(cancelArchive);
-        footer.Children.Add(footerActions); footer.Children.Add(archiveProgress);
+        footer.Children.Add(cancelArchive); footer.Children.Add(archiveProgress);
         footer.Children.Add(Hint("虚拟附件自动保存到本机。移除记录不会删除文件。")); Grid.SetRow(footer, 3); root.Children.Add(footer);
         clear.Click += async (_, _) => await Clear();
         archive.Click += async (_, _) => await Archive();
@@ -208,8 +208,10 @@ internal sealed partial class StationWindow : PanelWindow
     void RefreshActionState()
     {
         int total = CurrentItems().Length;
-        clear.Content = ActiveQuery.Filtered ? $"清空结果（{total}）" : "清空";
-        archive.Content = ActiveQuery.Filtered ? $"归档结果（{total}）" : "归档";
+        string clearLabel = ActiveQuery.Filtered ? $"清空当前结果（{total} 项）" : "清空中转站";
+        string archiveLabel = ActiveQuery.Filtered ? $"归档当前结果（{total} 项）" : "归档到文件夹";
+        AutomationProperties.SetName(clear, clearLabel); ToolTipService.SetToolTip(clear, clearLabel);
+        AutomationProperties.SetName(archive, archiveLabel); ToolTipService.SetToolTip(archive, archiveLabel);
         clear.IsEnabled = !busy && !store.ReadOnly && total > 0;
         archive.IsEnabled = !busy && total > 0;
         AutomationProperties.SetHelpText(clear, $"仅移除当前范围中的 {total} 项记录，不删除原文件");

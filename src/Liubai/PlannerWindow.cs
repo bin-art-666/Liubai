@@ -25,6 +25,7 @@ internal sealed partial class PlannerWindow : PanelWindow
     readonly TextBox noteEditor = new() { PlaceholderText = "随手记下想法……内容会自动保存", AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MaxLength = 20000, Height = 180 };
     readonly TextBox noteSearch = new() { PlaceholderText = "搜索记录", MaxLength = 200 };
     readonly TextBlock status = Hint("内容保存在本机，自动保存");
+    readonly Button saveButton = IconButton("\uE74E", "立即保存", fontSize: 17);
     readonly TextBlock reminderWarning = Hint("");
     readonly Button undoButton = new() { Content = "撤销删除", Visibility = Visibility.Collapsed };
     readonly ToggleButton tasksTab = new() { Content = "待办" }, notesTab = new() { Content = "随手记" };
@@ -63,26 +64,29 @@ internal sealed partial class PlannerWindow : PanelWindow
         root.RowDefinitions.Add(new() { Height = GridLength.Auto });
         root.RowDefinitions.Add(new() { Height = new GridLength(1, GridUnitType.Star) });
         root.RowDefinitions.Add(new() { Height = GridLength.Auto });
-        var header = new Grid();
+        var header = new Grid { ColumnSpacing = 12 };
+        header.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) });
+        header.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
         var tabs = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
         tabs.Children.Add(tasksTab); tabs.Children.Add(notesTab); header.Children.Add(tabs);
-        var close = IconButton("\uE8BB", "收起待办与随手记"); close.HorizontalAlignment = HorizontalAlignment.Right;
-        close.Click += (_, _) => Hide(); header.Children.Add(close); root.Children.Add(header);
+        var close = IconButton("\uE8BB", "收起待办与随手记");
+        var controls = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
+        saveButton.Click += async (_, _) => await FlushAsync();
+        controls.Children.Add(saveButton); controls.Children.Add(close);
+        Grid.SetColumn(controls, 1); header.Children.Add(controls);
+        close.Click += (_, _) => Hide(); root.Children.Add(header);
         var pages = new Grid(); pages.Children.Add(tasksPage); pages.Children.Add(notesPage);
         var scroll = new ScrollViewer { Content = pages, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
         Grid.SetRow(scroll, 1); root.Children.Add(scroll);
         var footer = new StackPanel { Spacing = 8 };
         footer.Children.Add(status);
         footer.Children.Add(reminderWarning);
-        var footerActions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
-        var save = new Button { Content = "立即保存" };
-        save.Click += async (_, _) => await FlushAsync();
         undoButton.Click += async (_, _) => await Run(async () =>
         {
             if (undo == null) return;
             await undo(); undo = null; undoButton.Visibility = Visibility.Collapsed; status.Text = "已恢复删除的内容";
         });
-        footerActions.Children.Add(save); footerActions.Children.Add(undoButton); footer.Children.Add(footerActions);
+        footer.Children.Add(undoButton);
         Grid.SetRow(footer, 2); root.Children.Add(footer);
         BuildTasks(); BuildNotes(); InitializePanel(root);
         Name(taskTitle, "待办标题"); Name(taskDetail, "待办备注"); Name(taskDate, "待办日期"); Name(taskSearch, "搜索待办");
@@ -120,9 +124,9 @@ internal sealed partial class PlannerWindow : PanelWindow
 
     static TextBlock Hint(string text) => new() { Text = text, FontSize = 12, Opacity = .7, TextWrapping = TextWrapping.Wrap };
     static void Name(DependencyObject element, string name) => AutomationProperties.SetName(element, name);
-    static Button IconButton(string glyph, string name)
+    static Button IconButton(string glyph, string name, double fontSize = 13)
     {
-        var button = new Button { Content = new FontIcon { Glyph = glyph, FontSize = 13 }, Width = 30, Height = 30,
+        var button = new Button { Content = new FontIcon { Glyph = glyph, FontSize = fontSize }, Width = 30, Height = 30,
             MinWidth = 0, MinHeight = 0, Padding = new Thickness(0), BorderThickness = new Thickness(0), Background = new SolidColorBrush(Colors.Transparent) };
         Name(button, name); ToolTipService.SetToolTip(button, name); return button;
     }
@@ -195,6 +199,7 @@ internal sealed partial class PlannerWindow : PanelWindow
     internal async Task<bool> FlushAsync()
     {
         saveTimer.Stop(); await flushGate.WaitAsync();
+        saveButton.IsEnabled = false;
         try
         {
             // XAML can dispatch TextChanged after a programmatic edit or a fast
@@ -221,7 +226,7 @@ internal sealed partial class PlannerWindow : PanelWindow
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
         { if (!destroyed) status.Text = "保存失败，内容仍保留在面板中。请重试。"; return false; }
-        finally { flushGate.Release(); }
+        finally { if (!destroyed) saveButton.IsEnabled = true; flushGate.Release(); }
     }
     async Task Run(Func<Task> action)
     {
@@ -287,6 +292,7 @@ internal sealed partial class PlannerWindow : PanelWindow
         tasksPage.Visibility = page == PlannerPage.Tasks ? Visibility.Visible : Visibility.Collapsed;
         notesPage.Visibility = page == PlannerPage.Notes ? Visibility.Visible : Visibility.Collapsed;
         RefreshLists();
+        NotifyPresentationChanged();
     }
     internal PlannerPage Page => page;
     internal string DisplayDevice => display.Device;

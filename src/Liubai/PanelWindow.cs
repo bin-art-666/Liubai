@@ -7,6 +7,8 @@ namespace Liubai;
 /// <summary>Shared lifecycle for transient feature panels: outside focus, Escape and close dismiss them.</summary>
 internal abstract class PanelWindow : Window
 {
+    internal static event Action? PresentationChanged;
+    protected void NotifyPresentationChanged() => PresentationChanged?.Invoke();
     long activationVersion;
     bool closed;
     int modalDepth;
@@ -31,11 +33,11 @@ internal abstract class PanelWindow : Window
             {
                 if (closed || !IsOpen || version != activationVersion || modalDepth > 0 || !DismissOnOutside) return;
                 var handle = WinRT.Interop.WindowNative.GetWindowHandle(this);
-                if (!Native.PanelHasFocus(handle)) Hide();
+                if (!Native.PanelHasFocus(handle) && !PanelToggleTargets.OwnsForegroundPointer()) Hide();
             });
         };
         AppWindow.Closing += (_, args) => { if (!closed) { args.Cancel = true; Hide(); } };
-        Closed += (_, _) => { closed = true; IsOpen = false; activationVersion++; outsideClicks?.Dispose(); caption?.Dispose(); };
+        Closed += (_, _) => { closed = true; IsOpen = false; activationVersion++; outsideClicks?.Dispose(); caption?.Dispose(); NotifyPresentationChanged(); };
     }
 
     protected void InitializePanel(FrameworkElement content)
@@ -63,6 +65,7 @@ internal abstract class PanelWindow : Window
         outsideClicks?.Dispose();
         outsideClicks = new OutsideClickWatcher(WinRT.Interop.WindowNative.GetWindowHandle(this), DispatcherQueue,
             () => { if (modalDepth == 0 && DismissOnOutside) Hide(); });
+        NotifyPresentationChanged();
     }
 
     internal void Hide()
@@ -73,7 +76,7 @@ internal abstract class PanelWindow : Window
         outsideClicks?.Dispose();
         outsideClicks = null;
         try { OnHiding(); }
-        finally { AppWindow.Hide(); }
+        finally { AppWindow.Hide(); NotifyPresentationChanged(); }
     }
 
     protected virtual void OnHiding() { }

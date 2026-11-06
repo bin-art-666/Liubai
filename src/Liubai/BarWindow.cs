@@ -104,10 +104,14 @@ public sealed partial class BarWindow : Window
         var layers = new Grid(); layers.Children.Add(surface); layers.Children.Add(cover);
         Content = layers;
         InitializeToolbarReorder(layers);
+        PanelToggleTargets.Register(this, todo, quickNote, aiButton, shelf, settings, clockButton);
+        PanelWindow.PresentationChanged += RefreshPanelHighlights;
+        actions.ActualThemeChanged += (_, _) => RefreshPanelHighlights();
         settings.Click += (_, _) => { if (!ToolbarClickBlocked) ToggleSettings(); };
         todo.Click += (_, _) => { if (!ToolbarClickBlocked) OpenPlanner(PlannerPage.Tasks); };
         quickNote.Click += (_, _) => { if (!ToolbarClickBlocked) OpenPlanner(PlannerPage.Notes); };
         screenshot.Click += async (_, _) => { if (!ToolbarClickBlocked) await TakeScreenshot(); };
+        InitializeScreenshotMenu();
         qrScan.Click += async (_, _) => { if (!ToolbarClickBlocked) await ScanQr(); };
         surface.ActualThemeChanged += (_, _) =>
         {
@@ -186,6 +190,7 @@ public sealed partial class BarWindow : Window
                 if (button.Content is IconElement icon) icon.ClearValue(IconElement.ForegroundProperty);
             }
         }
+        RefreshPanelHighlights();
     }
 
     public void Start(bool showSettings)
@@ -242,6 +247,7 @@ public sealed partial class BarWindow : Window
         if (closing) return;
         FinishToolbarDrag(false); preferences.ToolbarOrderChanged -= ToolbarOrderChanged;
         closing = true; QrSelectionWindow.CancelActive(); qrResults?.Destroy(); if (qrTip != null) qrTip.IsOpen = false;
+        PanelWindow.PresentationChanged -= RefreshPanelHighlights;
         App.Guard.Changed -= RefreshGuardToolbar;
         App.Privacy.Changed -= RefreshPrivacyToolbar;
         App.Ai.Changed -= RefreshAiToolbar;
@@ -392,6 +398,7 @@ public sealed partial class BarWindow : Window
 
     void ToggleSettings()
     {
+        if (closing || openingPlanner || PanelModal || manager?.HasModal == true || manager?.Suspended == true) return;
         if (settingsWindow?.IsOpen == true) settingsWindow.Hide();
         else OpenSettings();
     }

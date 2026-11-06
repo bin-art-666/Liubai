@@ -12,6 +12,7 @@ internal sealed partial class BarManager
     readonly Dictionary<(uint, long), long> environmentEvents = new();
     bool quitting, reconciling, asleep, locked, visible = true;
     PlannerWindow? plannerPanel;
+    internal PlannerWindow? CurrentPlanner => plannerPanel;
     internal bool Suspended => asleep || locked;
     internal bool HasModal => bars.Values.Any(b => b.PanelModal);
 

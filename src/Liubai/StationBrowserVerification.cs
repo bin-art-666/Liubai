@@ -20,7 +20,7 @@ internal sealed partial class StationWindow
         Choose(StationCategory.Files); if (CurrentItems().Length != 1) throw new Exception("Images leaked into files");
         checks.Add("Expanded sidebar selections filter images separately from files and retain selected category");
         Choose(StationCategory.Text); periodFilter.SelectedIndex = (int)StationPeriod.Today; search.Text = "备忘"; await Task.Delay(350);
-        if (CurrentItems().Length != 1 || !Convert.ToString(clear.Content)!.Contains("1") || !Convert.ToString(archive.Content)!.Contains("1")) throw new Exception("Combined query or scope labels invalid");
+        if (CurrentItems().Length != 1 || !Microsoft.UI.Xaml.Automation.AutomationProperties.GetName(clear).Contains("1") || !Microsoft.UI.Xaml.Automation.AutomationProperties.GetName(archive).Contains("1")) throw new Exception("Combined query or scope labels invalid");
         var clearPending = Clear(); await Task.Delay(150);
         ContentDialog Dialog() => VisualTreeHelper.GetOpenPopupsForXamlRoot(root.XamlRoot).SelectMany(p => p.Child is { } child ? FindDialogs(child) : []).Single();
         var dialog = Dialog();

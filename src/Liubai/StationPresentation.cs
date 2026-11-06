@@ -15,6 +15,8 @@ namespace Liubai;
 
 internal sealed partial class StationWindow
 {
+    const string SweepPath = "M 10 9 L 16 2 M 8 8 L 13 12 M 8 8 C 5 10 3 13 2 17 L 10 18 C 10 15 11 13 13 12 M 6 12 L 4 17 M 9 13 L 7 17";
+    const string ArchivePath = "M 10 2 L 10 12 M 6 8 L 10 12 L 14 8 M 3 10 L 2 17 C 2 17.6 2.4 18 3 18 L 17 18 C 17.6 18 18 17.6 18 17 L 17 10 M 3 14 L 6 14 L 7.5 16 L 12.5 16 L 14 14 L 17 14";
     const string OpenPath = "M 11.5 3.5 L 6 3.5 C 4.6 3.5 3.5 4.6 3.5 6 L 3.5 15 C 3.5 16.4 4.6 17.5 6 17.5 L 15 17.5 C 16.4 17.5 17.5 16.4 17.5 15 L 17.5 9 M 11 9 L 18 2 M 13 2 L 18 2 L 18 7";
     const string CopyPath = "M 7 6 L 5 6 C 3.9 6 3 6.9 3 8 L 3 16 C 3 17.1 3.9 18 5 18 L 11 18 C 12.1 18 13 17.1 13 16 L 13 14 M 9 2 L 15 2 C 16.1 2 17 2.9 17 4 L 17 12 C 17 13.1 16.1 14 15 14 L 9 14 C 7.9 14 7 13.1 7 12 L 7 4 C 7 2.9 7.9 2 9 2 Z";
     const string TrashPath = "M 3 5 L 17 5 M 7 5 L 7 3 C 7 2.4 7.4 2 8 2 L 12 2 C 12.6 2 13 2.4 13 3 L 13 5 M 5 5 L 6 17 C 6 17.6 6.4 18 7 18 L 13 18 C 13.6 18 14 17.6 14 17 L 15 5 M 8 8 L 8.5 14 M 12 8 L 11.5 14";
@@ -25,7 +27,7 @@ internal sealed partial class StationWindow
     internal sealed record StationColors(Windows.UI.Color First, Windows.UI.Color Second);
 
     void CancelPreviews() { previewCancellation?.Cancel(); previewCancellation?.Dispose(); previewCancellation = null; }
-    static Button ItemAction(string name, string data)
+    static Button ItemAction(string name, string data, bool header = false)
     {
         var button = IconButton("", name);
         button.CornerRadius = new CornerRadius(8); button.BorderThickness = new Thickness(1);
@@ -36,7 +38,13 @@ internal sealed partial class StationWindow
         var path = (Microsoft.UI.Xaml.Shapes.Path)Microsoft.UI.Xaml.Markup.XamlReader.Load(
             "<Path xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation' Data='" + data + "' StrokeThickness='1.4' StrokeStartLineCap='Round' StrokeEndLineCap='Round' StrokeLineJoin='Round'/>" );
         path.SetBinding(Microsoft.UI.Xaml.Shapes.Shape.StrokeProperty, new Binding { Source = button, Path = new PropertyPath("Foreground") });
-        var canvas = new Canvas { Width = 20, Height = 20, IsHitTestVisible = false }; canvas.Children.Add(path); button.Content = canvas;
+        var canvas = new Canvas { Width = 20, Height = 20, IsHitTestVisible = false }; canvas.Children.Add(path);
+        if (header)
+        {
+            button.CornerRadius = new CornerRadius(4); button.BorderThickness = new Thickness(0); button.Background = new SolidColorBrush(Colors.Transparent);
+            button.Content = new Viewbox { Width = 16, Height = 16, Child = canvas, IsHitTestVisible = false };
+        }
+        else button.Content = canvas;
         return button;
     }
     static Brush DefaultCardBrush() => new SolidColorBrush(Windows.UI.Color.FromArgb(22, 128, 128, 128));

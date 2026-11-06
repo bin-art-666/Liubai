@@ -13,7 +13,12 @@ public sealed partial class BarWindow
         shelf.AllowDrop = true; ToolTipService.SetToolTip(shelf, "收纳盒 · 中转站（支持拖入内容）");
         stationHoverTimer = DispatcherQueue.CreateTimer(); stationHoverTimer.IsRepeating = false; stationHoverTimer.Interval = TimeSpan.FromMilliseconds(350);
         stationHoverTimer.Tick += (_, _) => OpenStation(true);
-        shelf.Click += (_, _) => { if (ToolbarClickBlocked) return; if (stationWindow?.IsOpen == true) stationWindow.Hide(); else OpenStation(); };
+        shelf.Click += (_, _) =>
+        {
+            if (ToolbarClickBlocked || PanelModal || manager?.HasModal == true || manager?.Suspended == true || closing || openingPlanner) return;
+            stationHoverTimer.Stop();
+            if (stationWindow?.IsOpen == true) stationWindow.Hide(); else OpenStation();
+        };
         shelf.DragEnter += StationHover; shelf.DragOver += StationHover;
         shelf.DragLeave += (_, _) => { stationHoverTimer.Stop(); stationWindow?.ScheduleDragDismiss(); };
         shelf.Drop += async (_, e) =>

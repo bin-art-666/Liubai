@@ -1,11 +1,42 @@
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls;
 using Windows.Graphics;
+using Windows.Storage;
+using Windows.System;
 
 namespace Liubai;
 
 public sealed partial class BarWindow
 {
     bool preparingScreenshot;
+    bool openingScreenshotFolder;
+    void InitializeScreenshotMenu()
+    {
+        var menu = new MenuFlyout();
+        var openFolder = new MenuFlyoutItem { Text = "打开截图文件夹", Icon = new SymbolIcon(Symbol.Folder) };
+        openFolder.Click += async (_, _) => await OpenScreenshotFolder();
+        menu.Items.Add(openFolder);
+        menu.Opening += (_, _) => openFolder.IsEnabled = !closing && !openingScreenshotFolder && !ToolbarClickBlocked;
+        screenshot.ContextFlyout = menu;
+    }
+    async Task OpenScreenshotFolder()
+    {
+        if (closing || openingScreenshotFolder || ToolbarClickBlocked) return;
+        openingScreenshotFolder = true;
+        try
+        {
+            // Resolve on each click so a changed save location takes effect immediately.
+            string directory = Path.GetFullPath(App.Screenshots.Value.SaveDirectory);
+            await Task.Run(() => Directory.CreateDirectory(directory));
+            if (closing) return;
+            var folder = await StorageFolder.GetFolderFromPathAsync(directory);
+            if (!await Launcher.LaunchFolderAsync(folder)) ShowScreenshotResult("无法打开截图文件夹，请检查保存目录");
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException
+            or System.Runtime.InteropServices.COMException or System.Security.SecurityException)
+        { ShowScreenshotResult("无法打开截图文件夹，请检查路径或访问权限"); }
+        finally { openingScreenshotFolder = false; }
+    }
     async Task TakeScreenshot()
     {
         if (preparingScreenshot || closing) return;

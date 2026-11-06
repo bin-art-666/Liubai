@@ -32,8 +32,9 @@ public sealed partial class BarWindow
         await store.UpdateOptions(original, directory, true);
         OpenStation();
         var stationRoot = (DependencyObject)stationWindow!.Content;
-        var archive = StationControls<Button>(stationRoot).Single(b => Equals(b.Content, "归档"));
-        if (archive.Parent is not StackPanel footer || footer.Children[0] is not Button clear || !Equals(clear.Content, "清空") || footer.Children[1] != archive) throw new Exception("Archive not beside Clear");
+        var archive = StationControls<Button>(stationRoot).Single(b => AutomationProperties.GetName(b) == "归档到文件夹");
+        if (archive.Parent is not StackPanel header || header.Children[0] is not Button clear || AutomationProperties.GetName(clear) != "清空中转站" || header.Children[1] != archive
+            || header.Children.Count != 5) throw new Exception("Header actions must precede expand, pin and close");
         var pending = stationWindow.Archive(); await Task.Delay(150);
         var dialog = VisualTreeHelper.GetOpenPopupsForXamlRoot(((FrameworkElement)stationWindow.Content).XamlRoot)
             .SelectMany(p => p.Child is { } child ? StationControls<ContentDialog>(child) : []).SingleOrDefault();
@@ -42,6 +43,6 @@ public sealed partial class BarWindow
         dialog.Hide(); await pending;
         if (Directory.Exists(directory) || store.Items.Count != items) throw new Exception("Canceled archive dialog wrote files or removed content");
         await store.UpdateOptions(original, "", true);
-        checks.Add("Archive beside Clear; confirmation includes target and default removal; cancel leaves data and disk unchanged");
+        checks.Add("Header icons precede window controls; confirmation includes target and default removal; cancel leaves data and disk unchanged");
     }
 }

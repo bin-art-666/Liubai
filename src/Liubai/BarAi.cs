@@ -12,7 +12,7 @@ public sealed partial class BarWindow
             + "M 18 2 L 19.3 5.7 L 23 7 L 19.3 8.3 L 18 12 L 16.7 8.3 L 13 7 L 16.7 5.7 Z M 7 11 L 10 11", "1.4");
         aiButton.Click += async (_, _) =>
         {
-            if (ToolbarClickBlocked) return;
+            if (ToolbarClickBlocked || PanelModal || manager?.HasModal == true || manager?.Suspended == true || closing || openingPlanner) return;
             if (App.Ai.IsOpen) App.Ai.Hide(); else await OpenAiPanel();
         };
         var menu = new MenuFlyout();

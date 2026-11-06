@@ -29,7 +29,11 @@ public sealed partial class BarWindow
         clockBadgeTimer = DispatcherQueue.CreateTimer(); clockBadgeTimer.Interval = TimeSpan.FromSeconds(1); clockBadgeTimer.Tick += (_, _) => UpdateClockButton();
         App.Clock.Changed += ClockChanged;
         preferences.ClockFontSizeChanged += ClockChanged;
-        clockButton.Click += (_, _) => { if (ToolbarClickBlocked) return; if (clockWindow?.IsOpen == true) clockWindow.Hide(); else OpenClock(); };
+        clockButton.Click += (_, _) =>
+        {
+            if (ToolbarClickBlocked || closing || openingPlanner || PanelModal || manager?.HasModal == true || manager?.Suspended == true) return;
+            if (clockWindow?.IsOpen == true) clockWindow.Hide(); else OpenClock();
+        };
         UpdateClockButton();
     }
     void ClockChanged() => DispatcherQueue.TryEnqueue(() => { if (!closing) UpdateClockButton(); });

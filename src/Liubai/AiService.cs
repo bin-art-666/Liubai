@@ -7,6 +7,7 @@ internal sealed class AiService
     internal AiOptionsStore Options { get; }
     internal bool Busy => window?.Initializing == true;
     internal bool IsOpen => window?.IsOpen == true;
+    internal string? DisplayDevice => window?.DisplayDevice;
     internal bool ModalActive => window?.ModalActive == true;
     internal string Status => window?.Status ?? "点击展开 AI 面板，右上角可放大为独立窗口。";
     internal event Action? Changed;

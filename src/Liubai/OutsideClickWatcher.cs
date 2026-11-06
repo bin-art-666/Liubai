@@ -19,7 +19,8 @@ internal sealed class OutsideClickWatcher : IDisposable
             {
                 // POINT is the first member of MSLLHOOKSTRUCT; no other input data is needed.
                 var point = Marshal.PtrToStructure<Native.Point>(data);
-                if (!Native.IsPanelWindow(panel, WindowFromPoint(point)))
+                bool toggleClick = message.ToInt64() == 0x0201 && PanelToggleTargets.Contains(point);
+                if (!toggleClick && !Native.IsPanelWindow(panel, WindowFromPoint(point)))
                     dispatcher.TryEnqueue(DispatcherQueuePriority.Low, () => { if (!disposed) dismiss(); });
             }
             return CallNextHookEx(IntPtr.Zero, code, message, data);

@@ -16,7 +16,7 @@ internal static class StationArchivePicker
 
 internal sealed partial class StationWindow
 {
-    readonly Button archive = new() { Content = "归档" };
+    readonly Button archive = ItemAction("归档到文件夹", ArchivePath, header: true);
     readonly Button cancelArchive = new() { Content = "取消归档", Visibility = Visibility.Collapsed };
     readonly ProgressBar archiveProgress = new() { Minimum = 0, Maximum = 100, Visibility = Visibility.Collapsed };
     CancellationTokenSource? archiveCancellation;
