@@ -18,7 +18,7 @@ public sealed partial class BarWindow
     Grid? toolbarLayers;
     bool toolbarMoved;
     long suppressToolbarClickUntil;
-    bool ToolbarClickBlocked => draggedToolbarButton != null || Environment.TickCount64 < suppressToolbarClickUntil
+    bool ToolbarClickBlocked => peekFired || draggedToolbarButton != null || Environment.TickCount64 < suppressToolbarClickUntil
         || (InputKeyboardSource.GetKeyStateForCurrentThread(VirtualKey.Control) & CoreVirtualKeyStates.Down) != 0;
 
     void InitializeToolbarReorder(Grid layers)

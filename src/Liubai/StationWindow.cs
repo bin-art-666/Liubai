@@ -35,6 +35,7 @@ internal sealed partial class StationWindow : PanelWindow
     internal bool Detached { get; private set; }
     internal string DisplayDevice => display.Device;
     internal bool Pinned => pin.IsChecked == true;
+    internal event Action? WorkRequested;
 
     internal StationWindow(StationStore store, DesktopMonitor display)
     {
@@ -70,6 +71,8 @@ internal sealed partial class StationWindow : PanelWindow
         Grid.SetColumn(controls, 1); header.Children.Add(controls); root.Children.Add(header);
         InitializeFloatingCaption(header, controls, () => Detached);
         var intro = new StackPanel { Spacing = 6 }; intro.Children.Add(introHint); intro.Children.Add(count);
+        var work = new Button { Content = "工作现场", HorizontalAlignment = HorizontalAlignment.Left };
+        work.Click += (_, _) => WorkRequested?.Invoke(); intro.Children.Add(work);
         Grid.SetRow(intro, 1); root.Children.Add(intro);
         var scroll = new ScrollViewer { Content = cards, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
         InitializeBrowser(scroll);
@@ -266,8 +269,8 @@ internal sealed partial class StationWindow : PanelWindow
         IDisposable? dragLease = null;
         grip.DragStarting += async (_, e) =>
         {
-            if (busy) { e.Cancel = true; return; }
-            dragLease = KeepOpen(); var deferral = e.GetDeferral();
+            if (busy || ModalActive) { e.Cancel = true; return; }
+            dragLease = KeepOpenForDrag(); var deferral = e.GetDeferral();
             try { e.AllowedOperations = DataPackageOperation.Copy; await StationTransfer.Fill(e.Data, item); }
             catch { e.Cancel = true; dragLease.Dispose(); dragLease = null; status.Text = "该文件暂不可用、已移动或已删除，请检查原位置。"; }
             finally { deferral.Complete(); }

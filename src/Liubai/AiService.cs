@@ -24,6 +24,7 @@ internal sealed class AiService
         await window.Open(display, top ?? display.Info.Work.Top);
     }
     internal void Hide(bool includeDetached = true) { if (includeDetached) window?.Hide(); else window?.HideDocked(); }
+    internal Task<bool> ReceiveDrop(Windows.ApplicationModel.DataTransfer.DataPackageView view) => window?.ReceiveDrop(view) ?? throw new IOException("请先打开 AI 面板。");
     internal void UpdateDisplay(DesktopMonitor display) { if (window?.DisplayDevice == display.Device) window.UpdateDisplay(display); }
     internal void Stop() { window?.Destroy(); window = null; }
 }

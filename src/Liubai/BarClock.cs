@@ -61,11 +61,13 @@ public sealed partial class BarWindow
             text = "下个闹钟 · " + ClockPolicy.When(TimeZoneInfo.ConvertTime(ClockPolicy.Due(alarm, TimeZoneInfo.Local)!.Value, TimeZoneInfo.Local).DateTime, DateTimeOffset.Now, TimeZoneInfo.Local);
         if (text != clockTipText) { clockTipText = text; ToolTipService.SetToolTip(clockButton, text); Microsoft.UI.Xaml.Automation.AutomationProperties.SetHelpText(clockButton, text); }
         if (active && clockBadgeTimer?.IsRunning != true) clockBadgeTimer?.Start(); else if (!active) clockBadgeTimer?.Stop();
+        RefreshFocusBar();
     }
     internal bool RequestClock(Guid id) => OpenClock(id);
     bool OpenClock(Guid? id = null)
     {
         if (closing || openingPlanner || PanelModal || manager?.HasModal == true || manager?.Suspended == true || !Native.MonitorExists(Display.Handle)) return false;
+        HideUtilityPanels();
         App.Ai.Hide(false);
         settingsWindow?.Hide(); plannerWindow?.Hide(); qrResults?.Hide(); stationWindow?.HideDocked(); stationHoverTimer?.Stop(); manager?.HideOtherPanels(this);
         clockWindow ??= new ClockWindow(App.Clock, Display);

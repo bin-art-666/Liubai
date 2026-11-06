@@ -119,6 +119,8 @@ internal sealed class PlannerStore
         if (committed) Changed?.Invoke();
     }
     internal Task SaveDraft(TodoDraft draft) => Change(d => d with { Draft = draft });
+    internal Task ImportTask(string title, string detail) => Change(d => d with
+    { Tasks = [.. d.Tasks, new(Guid.NewGuid(), title.Trim(), detail, null, false, DateTimeOffset.Now, DateTimeOffset.Now)] });
     internal Task AddTask(string title, string detail, DateOnly? date, TimeOnly? time = null, int? remindBefore = null) => Change(d =>
     {
         var now = DateTimeOffset.Now;

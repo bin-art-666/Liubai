@@ -10,6 +10,7 @@ public sealed partial class BarWindow
 {
     bool preparingScreenshot;
     bool openingScreenshotFolder;
+    ScreenshotPreviewWindow? screenshotPreview;
     void InitializeScreenshotMenu()
     {
         var menu = new MenuFlyout();
@@ -39,10 +40,11 @@ public sealed partial class BarWindow
     }
     async Task TakeScreenshot()
     {
-        if (preparingScreenshot || closing) return;
+        if (preparingScreenshot || closing || PanelModal || manager?.HasModal == true) return;
         preparingScreenshot = true;
         try
         {
+            screenshotPreview?.Hide();
             screenshotTipTimer.Stop(); screenshotTip.IsOpen = false;
             screenshotTip.Content = "一键截取整个屏幕";
             VisualStateManager.GoToState(screenshot, "Normal", false);
@@ -52,8 +54,16 @@ public sealed partial class BarWindow
             if (!Native.MonitorExists(Display.Handle)) { ShowScreenshotResult("屏幕已断开，请重试"); return; }
             var monitor = Display.Info.Monitor;
             var result = await ScreenshotService.Capture(new RectInt32(monitor.Left, monitor.Top,
-                monitor.Right - monitor.Left, monitor.Bottom - monitor.Top), App.Screenshots.Value);
-            if (!closing && !result.Busy) ShowScreenshotResult(result.Message);
+                monitor.Right - monitor.Left, monitor.Bottom - monitor.Top), App.Screenshots.Value, preview: true);
+            if (!closing && !result.Busy)
+            {
+                ShowScreenshotResult(result.Message);
+                if (result.PreviewBytes != null)
+                {
+                    screenshotPreview ??= new ScreenshotPreviewWindow(id => OpenWorkItem(new(WorkKind.Note, id)));
+                    await screenshotPreview.Open(result, Display, windowShown ? AppWindow.Position.Y + AppWindow.Size.Height : Display.Info.Work.Top);
+                }
+            }
         }
         finally { preparingScreenshot = false; }
     }

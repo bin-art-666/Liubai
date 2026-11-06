@@ -12,6 +12,7 @@ internal abstract class PanelWindow : Window
     long activationVersion;
     bool closed;
     int modalDepth;
+    int dragDepth;
     OutsideClickWatcher? outsideClicks;
     PanelCaption? caption;
     protected void InitializeFloatingCaption(FrameworkElement header, FrameworkElement controls, Func<bool> enabled) => caption = new(this, header, controls, enabled);
@@ -19,6 +20,8 @@ internal abstract class PanelWindow : Window
     internal Task VerifyFloatingCaption(bool enabled) => caption?.Verify(enabled) ?? throw new InvalidOperationException("Caption not initialized");
     internal bool IsOpen { get; private set; }
     internal bool ModalActive => modalDepth > 0;
+    internal bool DragActive => dragDepth > 0;
+    bool VisibilityProtected => modalDepth > 0 || dragDepth > 0;
     protected virtual bool DismissOnOutside => true;
     protected virtual bool Frameless => true;
 
@@ -27,11 +30,11 @@ internal abstract class PanelWindow : Window
         Activated += (_, args) =>
         {
             long version = ++activationVersion;
-            if (args.WindowActivationState != WindowActivationState.Deactivated || !IsOpen || modalDepth > 0 || !DismissOnOutside) return;
+            if (args.WindowActivationState != WindowActivationState.Deactivated || !IsOpen || VisibilityProtected || !DismissOnOutside) return;
             // Let XAML finish activating a dropdown/owned popup before deciding focus left the panel.
             DispatcherQueue.TryEnqueue(DispatcherQueuePriority.Low, () =>
             {
-                if (closed || !IsOpen || version != activationVersion || modalDepth > 0 || !DismissOnOutside) return;
+                if (closed || !IsOpen || version != activationVersion || VisibilityProtected || !DismissOnOutside) return;
                 var handle = WinRT.Interop.WindowNative.GetWindowHandle(this);
                 if (!Native.PanelHasFocus(handle) && !PanelToggleTargets.OwnsForegroundPointer()) Hide();
             });
@@ -64,13 +67,13 @@ internal abstract class PanelWindow : Window
         caption?.Queue();
         outsideClicks?.Dispose();
         outsideClicks = new OutsideClickWatcher(WinRT.Interop.WindowNative.GetWindowHandle(this), DispatcherQueue,
-            () => { if (modalDepth == 0 && DismissOnOutside) Hide(); });
+            () => { if (!VisibilityProtected && DismissOnOutside) Hide(); });
         NotifyPresentationChanged();
     }
 
     internal void Hide()
     {
-        if (!IsOpen || closed || modalDepth > 0) return;
+        if (!IsOpen || closed || VisibilityProtected) return;
         activationVersion++;
         IsOpen = false;
         outsideClicks?.Dispose();
@@ -80,10 +83,21 @@ internal abstract class PanelWindow : Window
     }
 
     protected virtual void OnHiding() { }
+    internal void ConfirmIncomingDrop()
+    {
+        if (closed || !IsOpen) return;
+        var lease = KeepOpen(); ShowPanel();
+        if (!DispatcherQueue.TryEnqueue(async () => { try { await Task.Delay(350); } finally { lease.Dispose(); } })) lease.Dispose();
+    }
     protected IDisposable KeepOpen()
     {
         modalDepth++; activationVersion++;
         return new ModalLease(() => { modalDepth--; activationVersion++; });
+    }
+    protected IDisposable KeepOpenForDrag()
+    {
+        dragDepth++; activationVersion++;
+        return new ModalLease(() => { dragDepth--; activationVersion++; });
     }
     sealed class ModalLease(Action release) : IDisposable
     {

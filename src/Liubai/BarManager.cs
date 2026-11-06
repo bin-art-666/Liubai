@@ -138,6 +138,7 @@ internal sealed partial class BarManager
         if (App.Reminders != null) await App.Reminders.Stop();
         await ScreenshotService.Flush();
         await App.FlushStation();
+        await App.FlushWork();
         refreshTimer.Stop(); plannerPanel?.Destroy();
         foreach (var bar in bars.Values.ToArray()) bar.Shutdown();
         bars.Clear(); WindowsCompositionQueue.ExitApplication();

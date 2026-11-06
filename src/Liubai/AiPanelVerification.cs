@@ -72,7 +72,9 @@ internal sealed partial class AiWindow
         checks.Add("Pin and unpin use shared outside-dismiss behavior");
         options.Save(options.Data with { Provider = "doubao" });
         await WaitFor(() => current != original && current?.View.CoreWebView2 != null && !Initializing);
-        options.Save(options.Data with { Provider = "deepseek" }); await Draft();
+        options.Save(options.Data with { Provider = "deepseek" });
+        // Returning after a focus dismissal must preserve the same cached conversation too.
+        await Open(display, display.Info.Work.Top); await Draft();
         if (!ReferenceEquals(current, original)) throw new Exception("Service switching discarded original page");
         checks.Add("Service switch retains previous provider's browser and draft");
         _ = await core.ExecuteScriptAsync("window.open('about:blank','fixturepopup')");
@@ -102,6 +104,9 @@ public sealed partial class BarWindow
             await Task.Delay(500);
             if (SessionState.Locked == true) throw new IOException("LOCKED: unlock before native verification");
             var store = new AiOptionsStore(Path.Combine(App.DataDirectory, "ai-fixture.json"));
+            // A scheduled fixture has no user foreground grant while WebView2 starts.
+            // Pin only its initial load; VerifyPanel still explicitly tests unpin/outside behavior.
+            store.Save(store.Data with { Pinned = true });
             panel = new AiWindow(store, App.DataDirectory, Display, () => { }, verification: true);
             store.Changed += panel.ApplyOptions;
             checks = await panel.VerifyPanel();

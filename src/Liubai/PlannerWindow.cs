@@ -88,7 +88,7 @@ internal sealed partial class PlannerWindow : PanelWindow
         });
         footer.Children.Add(undoButton);
         Grid.SetRow(footer, 2); root.Children.Add(footer);
-        BuildTasks(); BuildNotes(); InitializePanel(root);
+        BuildTasks(); BuildNotes(); InitializeDrops(root); InitializePanel(root);
         Name(taskTitle, "待办标题"); Name(taskDetail, "待办备注"); Name(taskDate, "待办日期"); Name(taskSearch, "搜索待办");
         Name(taskFilter, "待办分类"); Name(noteEditor, "随手记正文"); Name(noteSearch, "搜索随手记");
         tasksTab.Click += async (_, _) => await SwitchPage(PlannerPage.Tasks);
@@ -152,6 +152,7 @@ internal sealed partial class PlannerWindow : PanelWindow
         notesPage.Children.Add(new TextBlock { Text = "先记下来", FontSize = 23, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
         notesPage.Children.Add(Hint("写下想法或片段，停笔后自动保存。"));
         notesPage.Children.Add(noteEditor);
+        notesPage.Children.Add(noteImages);
         var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
         var create = new Button { Content = "新建记录" }; create.Click += async (_, _) => await Run(async () =>
         {
@@ -180,6 +181,7 @@ internal sealed partial class PlannerWindow : PanelWindow
         var note = store.Data.Notes.FirstOrDefault(n => n.Id == id);
         syncing = true; noteId = note?.Id; noteEditor.Text = note?.Text ?? ""; syncing = false;
         noteDirty = false;
+        RefreshNoteImages();
     }
     void StoreChanged() => DispatcherQueue.TryEnqueue(() => { if (!destroyed) RefreshLists(); });
     void ReminderStatus() => DispatcherQueue.TryEnqueue(() =>
@@ -232,7 +234,7 @@ internal sealed partial class PlannerWindow : PanelWindow
     {
         if (busy || destroyed) return; busy = true;
         try { await action(); }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException or System.Runtime.InteropServices.COMException)
         { if (!destroyed) { RefreshLists(); status.Text = "操作未完成：" + ex.Message; } }
         finally { busy = false; }
     }
@@ -295,6 +297,20 @@ internal sealed partial class PlannerWindow : PanelWindow
         NotifyPresentationChanged();
     }
     internal PlannerPage Page => page;
+    internal async Task OpenWorkItem(WorkRef item, DesktopMonitor monitor, int top)
+    {
+        await Open(item.Kind == WorkKind.Note ? PlannerPage.Notes : PlannerPage.Tasks, monitor, top);
+        if (item.Kind == WorkKind.Note)
+        {
+            if (!store.Data.Notes.Any(n => n.Id == item.Id)) throw new IOException("该笔记已移除。");
+            await store.ActivateNote(item.Id); LoadNote(item.Id);
+        }
+        else
+        {
+            var task = store.Data.Tasks.FirstOrDefault(t => t.Id == item.Id) ?? throw new IOException("该待办已移除。");
+            taskFilter.SelectedIndex = task.Completed ? 3 : 2; taskSearch.Text = task.Title;
+        }
+    }
     internal string DisplayDevice => display.Device;
     internal async Task OpenReminder(Guid id, DesktopMonitor monitor, int barBottom)
     {

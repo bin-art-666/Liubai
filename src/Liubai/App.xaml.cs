@@ -43,6 +43,11 @@ public partial class App : Application
     internal static AiService Ai => ai ??= new(DataDirectory);
     internal static void StopAi() => ai?.Stop();
     internal static PlannerStore Planner => planner ??= new PlannerStore(Path.Combine(DataDirectory, "planner.json"));
+    static WorkHub? work;
+    internal static WorkHub Work => work ??= new(DataDirectory, Planner, Station);
+    internal static Task FlushWork() => work?.Flush() ?? Task.CompletedTask;
+    internal static event Action<Guid, string>? FocusRequested;
+    internal static void RequestFocus(Guid task, string display) => FocusRequested?.Invoke(task, display);
     static ScreenshotOptionsStore? screenshots;
     internal static ScreenshotOptionsStore Screenshots => screenshots ??= new(Path.Combine(DataDirectory, "screenshot.json"));
     internal static ReminderService? Reminders { get; private set; }
@@ -83,7 +88,7 @@ public partial class App : Application
         if (!first) { if (startupLaunch) StartupService.Log("already-running"); Exit(); return; }
         if (index < 0 && !arguments.Any(a => a.StartsWith("--verify-", StringComparison.Ordinal))) StartupService.RefreshExistingPath();
         var preferences = new AppearanceStore(Path.Combine(DataDirectory, "appearance.json"));
-        if (arguments.Contains("--verify-station-browser") || arguments.Contains("--verify-station-size") || arguments.Contains("--verify-ai-panel") || arguments.Contains("--verify-privacy") || arguments.Contains("--verify-guard") || arguments.Contains("--verify-toolbar") || arguments.Contains("--verify-expanded") || arguments.Contains("--verify-shell") || arguments.Contains("--verify-planner") || arguments.Contains("--verify-reminders") || arguments.Contains("--verify-screenshot") || arguments.Contains("--verify-qr") || arguments.Contains("--verify-station") || arguments.Contains("--verify-clock"))
+        if (arguments.Contains("--verify-workflow") || arguments.Contains("--verify-station-browser") || arguments.Contains("--verify-station-size") || arguments.Contains("--verify-ai-panel") || arguments.Contains("--verify-privacy") || arguments.Contains("--verify-guard") || arguments.Contains("--verify-toolbar") || arguments.Contains("--verify-expanded") || arguments.Contains("--verify-shell") || arguments.Contains("--verify-planner") || arguments.Contains("--verify-reminders") || arguments.Contains("--verify-screenshot") || arguments.Contains("--verify-qr") || arguments.Contains("--verify-station") || arguments.Contains("--verify-clock"))
         {
             verificationBar = new BarWindow(preferences);
             verificationBar.Start(arguments.Contains("--show-settings"));

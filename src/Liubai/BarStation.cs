@@ -17,7 +17,7 @@ public sealed partial class BarWindow
         {
             if (ToolbarClickBlocked || PanelModal || manager?.HasModal == true || manager?.Suspended == true || closing || openingPlanner) return;
             stationHoverTimer.Stop();
-            if (stationWindow?.IsOpen == true) stationWindow.Hide(); else OpenStation();
+            if (stationWindow?.IsOpen == true || workSceneWindow?.IsOpen == true) { stationWindow?.Hide(); workSceneWindow?.Hide(); } else OpenStation();
         };
         shelf.DragEnter += StationHover; shelf.DragOver += StationHover;
         shelf.DragLeave += (_, _) => { stationHoverTimer.Stop(); stationWindow?.ScheduleDragDismiss(); };
@@ -46,10 +46,11 @@ public sealed partial class BarWindow
     bool OpenStation(bool forDrop = false)
     {
         if (closing || openingPlanner || PanelModal || manager?.HasModal == true || manager?.Suspended == true || !Native.MonitorExists(Display.Handle)) return false;
+        HideUtilityPanels();
         clockWindow?.Hide();
         App.Ai.Hide(false);
         settingsWindow?.Hide(); plannerWindow?.Hide(); qrResults?.Hide(); manager?.HideOtherPanels(this);
-        stationWindow ??= new StationWindow(App.Station, Display);
+        if (stationWindow is null) { stationWindow = new StationWindow(App.Station, Display); stationWindow.WorkRequested += OpenWorkScene; }
         stationWindow.Open(Display, windowShown ? AppWindow.Position.Y + AppWindow.Size.Height : Display.Info.Work.Top, forDrop);
         return true;
     }

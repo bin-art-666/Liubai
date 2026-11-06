@@ -23,8 +23,8 @@ public sealed partial class BarWindow
             App.Screenshots.Save(options);
             if (new ScreenshotOptionsStore(Path.Combine(App.DataDirectory, "screenshot.json")).Value != options)
                 throw new InvalidOperationException("Screenshot settings did not survive reload.");
-            var first = await ScreenshotService.Capture(bounds, options, copy: false);
-            if (first.SavedPath == null || first.CaptureError != null || first.SaveError != null)
+            var first = await ScreenshotService.Capture(bounds, options, copy: false, preview: true);
+            if (first.SavedPath == null || first.PreviewBytes == null || first.PreviewBytes.Length == 0 || first.CaptureError != null || first.SaveError != null)
                 throw new InvalidOperationException("PNG capture/save/copy failed: " + first);
             var file = await StorageFile.GetFileFromPathAsync(first.SavedPath);
             using (var stream = await file.OpenReadAsync())

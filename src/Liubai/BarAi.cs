@@ -34,6 +34,7 @@ public sealed partial class BarWindow
     async Task OpenAiPanel()
     {
         if (closing || openingPlanner || PanelModal || manager?.HasModal == true || manager?.Suspended == true || !Native.MonitorExists(Display.Handle)) return;
+        HideUtilityPanels();
         clockWindow?.Hide(); settingsWindow?.Hide(); plannerWindow?.Hide(); qrResults?.Hide(); stationWindow?.HideDocked(); manager?.HideOtherPanels(this);
         await App.Ai.Open(Display, windowShown ? AppWindow.Position.Y + AppWindow.Size.Height : Display.Info.Work.Top);
     }

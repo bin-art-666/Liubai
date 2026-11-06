@@ -83,7 +83,8 @@ internal sealed partial class AiWindow : PanelWindow
         AutomationProperties.SetName(provider, "AI 面板服务"); Grid.SetColumn(provider, 1); navigation.Children.Add(provider);
         provider.SelectionChanged += (_, _) => { if (!syncing && provider.SelectedItem is Choice choice) try { options.Save(options.Data with { Provider = choice.Id }); } catch { SetStatus("AI 服务保存失败，请重试。"); } };
         Grid.SetRow(navigation, 1); root.Children.Add(navigation);
-        var content = new Border { CornerRadius = new CornerRadius(12), Child = browsers, Background = new SolidColorBrush(Colors.Transparent) };
+        var browserHost = new Grid(); browserHost.Children.Add(browsers); InitializeDropInbox(browserHost);
+        var content = new Border { CornerRadius = new CornerRadius(12), Child = dropContent, Background = new SolidColorBrush(Colors.Transparent) };
         Grid.SetRow(content, 2); root.Children.Add(content);
         var footer = new StackPanel { Spacing = 6 }; footer.Children.Add(status); footer.Children.Add(retry);
         retry.Click += async (_, _) => { if (current is null) return; if (current.View.CoreWebView2 != null && !current.Failed) current.View.Reload(); else { Remove(current); current = null; await ShowSelected(); } };
@@ -177,6 +178,7 @@ internal sealed partial class AiWindow : PanelWindow
             await page.View.EnsureCoreWebView2Async(page.Environment);
             if (destroyed) return;
             Configure(page.View, page);
+            await page.View.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync("window.addEventListener('dragover',e=>e.preventDefault(),true);window.addEventListener('drop',e=>{e.preventDefault();e.stopImmediatePropagation();},true);");
             if (verification) page.View.NavigateToString("<!doctype html><html><meta charset='utf-8'><style>body{font:16px system-ui;padding:20px;background:#eef5fa}textarea{width:90%;height:180px;padding:10px;font:16px system-ui}</style><h2>AI 面板测试页</h2><p>仅本机测试，不连接 AI 网站。</p><textarea id='draft'>保留我的草稿</textarea></html>");
             else page.View.CoreWebView2.Navigate(page.Endpoint.Url);
             if (!IsOpen) MemoryTarget(page.View, true);

@@ -7,7 +7,7 @@ using Windows.Storage.Streams;
 namespace Liubai;
 
 internal sealed record ScreenshotResult(bool Copied = false, string? SavedPath = null, string? CaptureError = null,
-    string? CopyError = null, string? SaveError = null, bool Busy = false)
+    string? CopyError = null, string? SaveError = null, bool Busy = false, byte[]? PreviewBytes = null)
 {
     internal string Message => CaptureError ?? (Copied
         ? SavedPath != null ? "已复制并保存截图\n" + SavedPath : SaveError != null ? "已复制截图；保存文件失败，请检查目录权限" : "已复制截图"
@@ -18,7 +18,7 @@ internal static class ScreenshotService
 {
     static readonly SemaphoreSlim gate = new(1, 1);
     static long lastStarted = long.MinValue / 2;
-    internal static async Task<ScreenshotResult> Capture(RectInt32 bounds, ScreenshotOptions options, bool copy = true)
+    internal static async Task<ScreenshotResult> Capture(RectInt32 bounds, ScreenshotOptions options, bool copy = true, bool preview = false)
     {
         if (!await gate.WaitAsync(0)) return new(Busy: true);
         try
@@ -48,6 +48,7 @@ internal static class ScreenshotService
                     { copyError = ex.Message; if (attempt < 2) await Task.Delay(80 * (attempt + 1)); }
                 }
             }
+            byte[]? previewBytes = null;
             if (options.SaveFiles)
             {
                 try
@@ -56,6 +57,7 @@ internal static class ScreenshotService
                     byte[] bytes = new byte[checked((int)png.Size)];
                     using (var reader = new DataReader(png.GetInputStreamAt(0)))
                     { await reader.LoadAsync((uint)bytes.Length); reader.ReadBytes(bytes); }
+                    if (preview) previewBytes = bytes;
                     saved = await Task.Run(async () =>
                     {
                         string directory = Path.GetFullPath(options.SaveDirectory);
@@ -74,7 +76,12 @@ internal static class ScreenshotService
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or COMException or ArgumentException)
                 { saveError = ex.Message; }
             }
-            return new(copied, saved, CopyError: copyError, SaveError: saveError);
+            if (preview && previewBytes == null)
+            {
+                previewBytes = new byte[checked((int)png.Size)];
+                using var reader = new DataReader(png.GetInputStreamAt(0)); await reader.LoadAsync((uint)previewBytes.Length); reader.ReadBytes(previewBytes);
+            }
+            return new(copied, saved, CopyError: copyError, SaveError: saveError, PreviewBytes: previewBytes);
         }
         catch (Exception ex) when (ex is COMException or IOException or InvalidOperationException or ArgumentException or OverflowException)
         { return new(CaptureError: "截图未完成，请稍后重试"); }

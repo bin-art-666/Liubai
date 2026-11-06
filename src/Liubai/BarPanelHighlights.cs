@@ -16,7 +16,8 @@ public sealed partial class BarWindow
         SetPanelHighlight(todo, plannerHere && planner!.Page == PlannerPage.Tasks);
         SetPanelHighlight(quickNote, plannerHere && planner!.Page == PlannerPage.Notes);
         SetPanelHighlight(aiButton, App.Ai.IsOpen && App.Ai.DisplayDevice == Display.Device);
-        SetPanelHighlight(shelf, stationWindow?.IsOpen == true);
+        SetPanelHighlight(shelf, stationWindow?.IsOpen == true || workSceneWindow?.IsOpen == true);
+        SetPanelHighlight(focusEntry, focusWindow?.IsOpen == true);
         SetPanelHighlight(settings, settingsWindow?.IsOpen == true);
         SetPanelHighlight(clockButton, clockWindow?.IsOpen == true);
     }

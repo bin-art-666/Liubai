@@ -39,8 +39,10 @@ internal sealed partial class PlannerWindow
             Name(done, (item.Completed ? "恢复待办：" : "完成待办：") + item.Title);
             done.Click += async (_, _) => await Run(async () => { await store.CompleteTask(item.Id, done.IsChecked == true); status.Text = done.IsChecked == true ? "已完成" : "已恢复为待办"; });
             row.Children.Add(done);
-            var edit = IconButton("\uE70F", "编辑待办：" + item.Title); Grid.SetColumn(edit, 1); edit.Click += async (_, _) => await Run(() => EditTask(item)); row.Children.Add(edit);
-            var delete = IconButton("\uE74D", "删除待办：" + item.Title); Grid.SetColumn(delete, 2);
+            var focus = IconButton("\uE916", "开始专注：" + item.Title); focus.IsEnabled = !item.Completed;
+            focus.Click += (_, _) => App.RequestFocus(item.Id, display.Device); Grid.SetColumn(focus, 1); row.Children.Add(focus);
+            var edit = IconButton("\uE70F", "编辑待办：" + item.Title); Grid.SetColumn(edit, 2); edit.Click += async (_, _) => await Run(() => EditTask(item)); row.Children.Add(edit);
+            var delete = IconButton("\uE74D", "删除待办：" + item.Title); Grid.SetColumn(delete, 3);
             delete.Click += async (_, _) => await Run(async () => { await store.DeleteTask(item.Id); SetUndo(() => store.RestoreTask(item)); }); row.Children.Add(delete);
             taskList.Children.Add(Card(row));
         }
@@ -54,7 +56,9 @@ internal sealed partial class PlannerWindow
         {
             var row = Row();
             var summary = new StackPanel { Spacing = 4, MaxWidth = 255 };
-            summary.Children.Add(new TextBlock { Text = string.IsNullOrWhiteSpace(note.Text) ? "空白记录" : Preview(note.Text, 90), TextWrapping = TextWrapping.Wrap });
+            int imageCount = App.Work.Store.Data.Images.Count(i => i.NoteId == note.Id);
+            summary.Children.Add(new TextBlock { Text = string.IsNullOrWhiteSpace(note.Text) ? imageCount > 0 ? "图文记录" : "空白记录" : Preview(note.Text, 90), TextWrapping = TextWrapping.Wrap });
+            if (imageCount > 0) summary.Children.Add(Hint($"{imageCount} 张图片 · 已保存在本机"));
             summary.Children.Add(Hint((note.Pinned ? "已置顶 · " : "") + note.Updated.LocalDateTime.ToString("M月d日 HH:mm")));
             var select = new Button { Content = summary, HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Left,
                 Padding = new Thickness(4), BorderThickness = new Thickness(0), Background = new SolidColorBrush(Colors.Transparent) };
@@ -90,7 +94,7 @@ internal sealed partial class PlannerWindow
     {
         var row = new Grid { ColumnSpacing = 3 };
         row.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) });
-        row.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); row.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); return row;
+        row.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); row.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); row.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); return row;
     }
     static Border Card(UIElement content) => new() { Child = content, Padding = new Thickness(7), CornerRadius = new CornerRadius(8),
         Background = new SolidColorBrush(Windows.UI.Color.FromArgb(18, 128, 128, 128)) };
