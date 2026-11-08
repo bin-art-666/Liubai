@@ -10,9 +10,12 @@ internal sealed record AiEndpoint(string Name, string Url)
 }
 internal sealed record AiBounds(int X, int Y, int Width, int Height);
 internal sealed record AiOptions(int Version = 1, string Provider = "deepseek", string CustomName = "自定义 AI", string CustomUrl = "", bool Pinned = false,
-    Dictionary<string, AiBounds>? Layouts = null, double DockWidth = 430, double DockHeight = 660, double DockTopOffset = 0);
+    Dictionary<string, AiBounds>? Layouts = null, double DockWidth = 430, double DockHeight = 660, double DockTopOffset = 0,
+    bool FollowGlobalCorners = true, int WebCornerRadius = 12);
 internal static class AiPolicy
 {
+    internal static double CornerRadius(AiOptions options,double global,double width,double height)
+        =>Math.Max(0,Math.Min(options.FollowGlobalCorners?global:options.WebCornerRadius,Math.Min(width,height)/2));
     internal static readonly string[] Providers = ["deepseek", "doubao", "xiaoyi", "chatgpt", "custom"];
     internal static readonly string[] Names = ["DeepSeek", "豆包", "小艺", "ChatGPT", "自定义 AI"];
     internal static IEnumerable<string> BuiltInProviders => Providers.Where(id => id != "custom");
@@ -49,6 +52,7 @@ internal static class AiPolicy
     {
         if (value.Version != 1) throw new NotSupportedException("AI 设置来自更新版本，已停止写入。");
         if (!double.IsFinite(value.DockWidth) || value.DockWidth is < MinimumDockWidth or > MaximumDockWidth
+            || value.WebCornerRadius is < 0 or > 40
             || !double.IsFinite(value.DockHeight) || value.DockHeight is < MinimumDockHeight or > MaximumDockHeight
             || !double.IsFinite(value.DockTopOffset) || value.DockTopOffset is < 0 or > 20000
             || value.CustomName is null || string.IsNullOrWhiteSpace(value.CustomName) || value.CustomName.Length > 40 || value.CustomName.Any(char.IsControl)

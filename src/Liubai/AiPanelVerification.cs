@@ -27,6 +27,20 @@ internal sealed partial class AiWindow
             }
         }
         await Draft();
+        var savedCorners=options.Data;
+        try
+        {
+            PreviewCorners(false,32);await MaskBrowser(original.View,false);await Draft();
+            if(options.Data!=savedCorners)throw new Exception("Corner preview wrote settings before save");
+            foreach(int radius in new[]{0,40})
+            {
+                options.Save(options.Data with{FollowGlobalCorners=false,WebCornerRadius=radius});await MaskBrowser(original.View);await Draft();
+                string actual=System.Text.Json.JsonSerializer.Deserialize<string>(await core.ExecuteScriptAsync("getComputedStyle(document.getElementById('root')||document.getElementById('__next')||document.body).borderTopLeftRadius"))!;
+                if(actual!=radius+"px"||!ReferenceEquals(original,current))throw new Exception("Corner update failed or recreated conversation: "+actual);
+            }
+            checks.Add("Independent corner preview, 0/40px extremes and saving retain the live draft and browser");
+        }
+        finally{options.Save(savedCorners);await MaskBrowser(original.View);}
         checks.AddRange(await VerifyProviderStrip());
         var savedStyle = PanelTheme.Current;
         await core.ExecuteScriptAsync("document.getElementById('draft').value='风格变化保留对话草稿'");

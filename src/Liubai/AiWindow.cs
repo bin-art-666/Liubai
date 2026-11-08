@@ -114,6 +114,7 @@ internal sealed partial class AiWindow : PanelWindow
     internal void ApplyOptions()
     {
         if (destroyed) return;
+        cornerPreview=null;RefreshViewportMasks();
         if (!dockResizing) { dockWidth = options.Data.DockWidth; dockHeight = options.Data.DockHeight; dockOffset = options.Data.DockTopOffset; }
         foreach (var grip in new[] { dockGrip, dockTopGrip, dockBottomGrip }) grip.IsEnabled = !options.ReadOnly;
         if (IsOpen && !Detached && !dockResizing) Position();
@@ -219,10 +220,10 @@ internal sealed partial class AiWindow : PanelWindow
     void ClosePopup()
     {
         if (popup is not { } value) return;
-        popup = null; maskRegistrations.Remove(value.View); browsers.Children.Remove(value.View); value.View.Close(); back.Visibility = Visibility.Collapsed; RefreshProviderEnabled();
+        popup = null; maskRegistrations.Remove(value.View); maskSurfaces.Remove(value.View); browsers.Children.Remove(value.View); value.View.Close(); back.Visibility = Visibility.Collapsed; RefreshProviderEnabled();
         if (current == value.Owner) current.View.Visibility = Visibility.Visible;
     }
-    void Remove(Page page) { maskRegistrations.Remove(page.View); pages.Remove(page.Endpoint.Key); browsers.Children.Remove(page.View); page.View.Close(); }
+    void Remove(Page page) { maskRegistrations.Remove(page.View); maskSurfaces.Remove(page.View); pages.Remove(page.Endpoint.Key); browsers.Children.Remove(page.View); page.View.Close(); }
     internal void HideDocked() { if (!Detached) Hide(); }
     protected override void OnHiding()
     {

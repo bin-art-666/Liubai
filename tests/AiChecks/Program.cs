@@ -9,6 +9,14 @@ try
 {
     string path = Path.Combine(root, "ai.json"); var store = new AiOptionsStore(path);
     Check(store.Data.Provider == "deepseek" && !store.Data.Pinned && !File.Exists(path), "Defaults do not write or preload browser");
+    Check(store.Data.FollowGlobalCorners&&AiPolicy.CornerRadius(store.Data,21,430,660)==21,"Legacy settings keep global corners");
+    string legacyCorners=Path.Combine(root,"legacy-corners.json");File.WriteAllText(legacyCorners,"{\"Provider\":\"deepseek\"}");
+    Check(new AiOptionsStore(legacyCorners).Data.FollowGlobalCorners,"Older JSON without corner fields follows global appearance");
+    var customCorners=store.Data with{FollowGlobalCorners=false,WebCornerRadius=40};
+    Check(AiPolicy.CornerRadius(customCorners,12,430,660)==40&&AiPolicy.CornerRadius(customCorners,12,30,20)==10,"Custom corners are independent and clamped to small viewports");
+    store.Save(customCorners);Check(new AiOptionsStore(path).Data.WebCornerRadius==40&&!new AiOptionsStore(path).Data.FollowGlobalCorners,"Custom corners persist");
+    Reject(()=>store.Save(customCorners with{WebCornerRadius=41}));Reject(()=>store.Save(customCorners with{WebCornerRadius=-1}));
+    store.Save(store.Data with{FollowGlobalCorners=true});
     Check(store.Data.DockWidth == 430, "Older/missing settings retain the familiar dock width");
     Check(store.Data.DockHeight == 660 && store.Data.DockTopOffset == 0, "Legacy configurations retain default dock height and top anchor");
     var dock = AiPolicy.DockBounds(430, 660, 40, new(0, 24, 1920, 1200), 24, 144);

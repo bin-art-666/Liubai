@@ -9,6 +9,12 @@ internal sealed partial class AiWindow
     internal async Task PreviewViewport(DesktopMonitor monitor,int top)
     { using var lease=KeepOpen();await Open(monitor,top);await Task.Delay(30000); }
     readonly Dictionary<WebView2,string> maskRegistrations=[];
+    readonly HashSet<WebView2> maskSurfaces=[];
+    AiOptions? cornerPreview;
+    internal void PreviewCorners(bool follow,int radius)
+    {cornerPreview=options.Data with{FollowGlobalCorners=follow,WebCornerRadius=radius};foreach(var view in browsers.Children.OfType<WebView2>().ToArray())_ = MaskBrowser(view,false);}
+    double ViewCornerRadius(WebView2 view)=>AiPolicy.CornerRadius(cornerPreview??options.Data,
+        PanelTheme.Value<CornerRadius>("CardRadius").TopLeft,view.ActualWidth,view.ActualHeight);
     void InitializeViewportMask()
     {
         PanelTheme.Changed+=RefreshViewportMasks;
@@ -19,7 +25,7 @@ internal sealed partial class AiWindow
         if(destroyed)return;
         foreach(var view in browsers.Children.OfType<WebView2>().ToArray())_ = MaskBrowser(view);
     }
-    async Task MaskBrowser(WebView2 view)
+    async Task MaskBrowser(WebView2 view,bool register=true)
     {
         if(view.CoreWebView2 is not {} core||destroyed)return;
         view.DefaultBackgroundColor=Windows.UI.Color.FromArgb(0,0,0,0);
@@ -31,10 +37,10 @@ internal sealed partial class AiWindow
             float scale=child!=null?(float)(view.XamlRoot?.RasterizationScale??1):1;
             var geometry=surface.Compositor.CreateRoundedRectangleGeometry();
             geometry.Size=new System.Numerics.Vector2((float)view.ActualWidth*scale,(float)view.ActualHeight*scale);
-            geometry.CornerRadius=new System.Numerics.Vector2((float)PanelTheme.Value<CornerRadius>("CardRadius").TopLeft*scale);
+            geometry.CornerRadius=new System.Numerics.Vector2((float)ViewCornerRadius(view)*scale);
             surface.Clip=surface.Compositor.CreateGeometricClip(geometry);
         }
-        if(!maskRegistrations.ContainsKey(view))
+        if(maskSurfaces.Add(view))
         {
             view.SizeChanged+=(_,_)=>ClipSurface();
             XamlRoot? watched=null;
@@ -45,7 +51,7 @@ internal sealed partial class AiWindow
             WatchScale();
         }
         ClipSurface();
-        string radius=PanelTheme.Value<CornerRadius>("CardRadius").TopLeft.ToString(CultureInfo.InvariantCulture);
+        string radius=ViewCornerRadius(view).ToString(CultureInfo.InvariantCulture);
         // Keep the canvas transparent; only the app's painted surface owns the corners.
         string script=$$"""
             (()=>{
@@ -87,8 +93,11 @@ internal sealed partial class AiWindow
             """;
         try
         {
-            if(maskRegistrations.Remove(view,out string? old))core.RemoveScriptToExecuteOnDocumentCreated(old);
-            maskRegistrations[view]=await core.AddScriptToExecuteOnDocumentCreatedAsync(script);
+            if(register)
+            {
+                if(maskRegistrations.Remove(view,out string? old))core.RemoveScriptToExecuteOnDocumentCreated(old);
+                maskRegistrations[view]=await core.AddScriptToExecuteOnDocumentCreatedAsync(script);
+            }
             await core.ExecuteScriptAsync(script);
             if(Environment.GetCommandLineArgs().Contains("--preview-ai-panel"))
                 File.WriteAllText(Path.Combine(AppContext.BaseDirectory,"..",".build","ai-mask-state.json"),await core.ExecuteScriptAsync("JSON.stringify([document.documentElement,document.body,document.getElementById('root')].filter(Boolean).map(e=>({tag:e.tagName,bg:getComputedStyle(e).backgroundColor,clip:getComputedStyle(e).clipPath,shadow:getComputedStyle(e).boxShadow})))"));

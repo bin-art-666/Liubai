@@ -26,6 +26,7 @@ internal sealed class AiService
         await window.Open(display, top ?? display.Info.Work.Top);
     }
     internal void Hide(bool includeDetached = true) { if (includeDetached) window?.Hide(); else window?.HideDocked(); }
+    internal void PreviewCorners(bool follow,int radius)=>window?.PreviewCorners(follow,radius);
     internal async Task PreviewViewport(DesktopMonitor display,int top)
     {if(SessionState.Locked==true)return;window??=new AiWindow(Options,directory,display,()=>Changed?.Invoke());await window.PreviewViewport(display,top);}
     internal Task<bool> ReceiveDrop(Windows.ApplicationModel.DataTransfer.DataPackageView view) => window?.ReceiveDrop(view) ?? throw new IOException("请先打开 AI 面板。");
