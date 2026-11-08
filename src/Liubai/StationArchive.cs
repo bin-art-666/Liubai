@@ -5,14 +5,14 @@ using System.Text.Json;
 namespace Liubai;
 
 internal sealed record ArchivedFile(string Path, long Size, string Sha256);
-internal sealed record ArchivedItem(StationItem Item, string Path, ArchivedFile[] Files);
+internal sealed record ArchivedItem(StationItem Item, string Path, ArchivedFile[] Files, string[]? Directories = null);
 internal sealed record ArchiveFailure(Guid Id, string Title, string Error);
 internal sealed record StationArchiveResult(string Directory, bool Canceled, ArchivedItem[] Saved, ArchiveFailure[] Failed);
 internal sealed record ArchiveProgress(int Completed, int Total, string Name);
 
 internal static class StationArchive
 {
-    internal static async Task<StationArchiveResult> Save(IReadOnlyList<StationItem> items, string destination, IProgress<ArchiveProgress>? progress = null, CancellationToken cancellation = default)
+    internal static async Task<StationArchiveResult> Save(IReadOnlyList<StationItem> items, string destination, IProgress<ArchiveProgress>? progress = null, CancellationToken cancellation = default, bool finalize = true)
     {
         if (items.Count == 0) throw new InvalidDataException("中转站没有可归档的项目。");
         if (!Path.IsPathFullyQualified(destination)) throw new ArgumentException("请选择归档目录。");
@@ -36,8 +36,8 @@ internal static class StationArchive
             progress?.Report(new(index + 1, items.Count, Title(item)));
         }
         canceled |= cancellation.IsCancellationRequested;
-        await Manifest(root, canceled ? "未完成归档（已取消，原记录保留）" : failed.Count > 0 ? "部分完成" : "归档完成", items, saved, failed);
-        if (!canceled)
+        await Manifest(root, canceled ? "未完成归档（已取消，原记录保留）" : failed.Count > 0 ? "部分完成" : finalize ? "归档完成" : "分组归档待完成", items, saved, failed);
+        if (!canceled && finalize)
         {
             string complete = Path.Combine(Path.GetFullPath(destination), name);
             Directory.Move(root, complete); root = complete;
@@ -61,14 +61,14 @@ internal static class StationArchive
         if (item.Kind == StationKind.Link) name += ".url";
         string relative = Path.Combine("项目", name), target = Path.Combine(root, relative);
         string pending = Path.Combine(root, "项目", "未完成_" + name);
-        var files = new List<ArchivedFile>();
+        var files = new List<ArchivedFile>(); var directories = new List<string>();
         if (item.Kind == StationKind.Folder)
         {
             string source = Path.TrimEndingDirectorySeparator(Path.GetFullPath(item.Value));
             string canonicalSource = CanonicalDirectory(source), canonicalRoot = CanonicalDirectory(root);
             string sourcePrefix = Path.EndsInDirectorySeparator(canonicalSource) ? canonicalSource : canonicalSource + Path.DirectorySeparatorChar;
             if (canonicalRoot.Equals(canonicalSource, StringComparison.OrdinalIgnoreCase) || canonicalRoot.StartsWith(sourcePrefix, StringComparison.OrdinalIgnoreCase)) throw new IOException("归档位置位于源文件夹内，请选择其他目录。");
-            await CopyDirectory(source, pending, "", files, token);
+            await CopyDirectory(source, pending, "", files, directories, token);
             token.ThrowIfCancellationRequested(); Directory.Move(pending, target);
         }
         else
@@ -86,7 +86,7 @@ internal static class StationArchive
             }
             token.ThrowIfCancellationRequested(); File.Move(pending, target); files.Add(copied);
         }
-        return new(item, relative, files.ToArray());
+        return new(item, relative, files.ToArray(), directories.ToArray());
     }
     static void RejectLink(string path)
     {
@@ -105,14 +105,15 @@ internal static class StationArchive
         else if (current.StartsWith(@"\\?\", StringComparison.Ordinal)) current = current[4..];
         return Path.TrimEndingDirectorySeparator(current);
     }
-    static async Task CopyDirectory(string source, string target, string relative, List<ArchivedFile> files, CancellationToken token)
+    static async Task CopyDirectory(string source, string target, string relative, List<ArchivedFile> files, List<string> directories, CancellationToken token)
     {
         token.ThrowIfCancellationRequested(); RejectLink(source); Directory.CreateDirectory(target);
+        if(relative.Length>0) directories.Add(relative);
         foreach (string child in Directory.EnumerateFileSystemEntries(source))
         {
             token.ThrowIfCancellationRequested(); RejectLink(child);
             string name = Path.GetFileName(child), next = Path.Combine(relative, name), destination = Path.Combine(target, name);
-            if (Directory.Exists(child)) await CopyDirectory(child, destination, next, files, token);
+            if (Directory.Exists(child)) await CopyDirectory(child, destination, next, files, directories, token);
             else files.Add(await CopyFile(child, destination, next, token));
         }
     }
@@ -137,7 +138,7 @@ internal static class StationArchive
     static async Task Manifest(string root, string status, IReadOnlyList<StationItem> source, List<ArchivedItem> saved, List<ArchiveFailure> failed)
     {
         var document = new { Version = 1, Status = status, Created = DateTimeOffset.Now, Total = source.Count,
-            Items = saved.Select(s => new { s.Item.Id, s.Item.Kind, s.Item.Title, s.Item.Created, Source = s.Item.Kind == StationKind.Text ? null : s.Item.Value, s.Path, s.Files }), Failed = failed };
+            Items = saved.Select(s => new { s.Item.Id, s.Item.Kind, s.Item.Title, s.Item.Created, Source = s.Item.Kind == StationKind.Text ? null : s.Item.Value, s.Path, s.Files, s.Directories }), Failed = failed };
         string path = Path.Combine(root, "index.json");
         await File.WriteAllTextAsync(path + ".tmp", JsonSerializer.Serialize(document, new JsonSerializerOptions { WriteIndented = true }), Encoding.UTF8);
         File.Move(path + ".tmp", path, true);

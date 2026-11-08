@@ -11,6 +11,9 @@ internal sealed class WorkHub
     StationStore station => getStation();
     readonly HashSet<WorkRef> known = [];
     readonly HashSet<Task> pending = [];
+    int collectionSuspended;
+    internal IDisposable SuspendCollection() { collectionSuspended++; return new Suspension(this); }
+    sealed class Suspension(WorkHub owner) : IDisposable { bool disposed; public void Dispose() { if(!disposed) { disposed=true; owner.collectionSuspended--; } } }
     internal string? LastError { get; private set; }
     internal WorkHub(string directory, PlannerStore planner, StationStore station)
         : this(new WorkStore(Path.Combine(directory, "workspaces.json")), () => planner, () => station)
@@ -36,16 +39,31 @@ internal sealed class WorkHub
         .Concat(planner.Data.Tasks.Select(i => new WorkRef(WorkKind.Task, i.Id))).Concat(planner.Data.Notes.Select(i => new WorkRef(WorkKind.Note, i.Id)));
     void Track()
     {
-        var current = Loaded().ToHashSet(); var added = current.Except(known).ToArray(); known.Clear(); known.UnionWith(current);
+        WorkRef[] added; Guid[] removed;
+        lock(known) {
+            var current = Loaded().ToHashSet(); var currentIds=current.Select(i=>(i.Kind,i.Id)).ToHashSet(); var knownIds = known.Select(i => (i.Kind,i.Id)).ToHashSet(); added = current.Where(i => !knownIds.Contains((i.Kind,i.Id))).ToArray(); removed=known.Where(i=>i.Kind==WorkKind.Station&&!currentIds.Contains((i.Kind,i.Id))).Select(i=>i.Id).ToArray(); known.Clear(); known.UnionWith(current);
+        }
+        if(collectionSuspended>0)return;
+        if(removed.Length>0) Queue(Store.ForgetStation(removed));
         if (added.Length == 0 || Store.Data.Active is not { } scene) return;
-        var task = Store.Link(scene, added); pending.Add(task); _ = Finish(task);
+        Queue(Store.Link(scene, added));
     }
+    void Queue(Task task) {lock(pending) pending.Add(task);_=Finish(task);}
     async Task Finish(Task task)
     {
         try { await task; LastError = null; } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException) { LastError = ex.Message; }
-        finally { pending.Remove(task); }
+        finally { lock(pending) pending.Remove(task); }
     }
-    internal async Task Flush() { while (pending.Count > 0) { try { await Task.WhenAll(pending.ToArray()); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { } } await Store.Flush(); }
+    internal async Task Flush()
+    {
+        while(true) {
+            Task[] snapshot; lock(pending) snapshot=pending.ToArray(); if(snapshot.Length==0)break;
+            try { await Task.WhenAll(snapshot); }
+            catch(Exception ex) when(ex is IOException or UnauthorizedAccessException) { LastError=ex.Message; }
+            finally { lock(pending) foreach(var task in snapshot) if(task.IsCompleted)pending.Remove(task); }
+        }
+        await Store.Flush();
+    }
     internal string Title(WorkRef item) => item.Kind switch
     {
         WorkKind.Task => planner.Data.Tasks.FirstOrDefault(t => t.Id == item.Id)?.Title ?? "待办已移除",

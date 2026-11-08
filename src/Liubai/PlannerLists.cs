@@ -35,6 +35,7 @@ internal sealed partial class PlannerWindow
             }
             if (!string.IsNullOrWhiteSpace(item.Detail)) summary.Children.Add(Hint(Preview(item.Detail, 65)));
             if (item.SourceNote != null) summary.Children.Add(Hint("来自随手记"));
+            AddGroupLinks(summary,WorkKind.Task,item.Id);
             var done = new CheckBox { Content = summary, IsChecked = item.Completed, HorizontalAlignment = HorizontalAlignment.Stretch };
             Name(done, (item.Completed ? "恢复待办：" : "完成待办：") + item.Title);
             done.Click += async (_, _) => await Run(async () => { await store.CompleteTask(item.Id, done.IsChecked == true); status.Text = done.IsChecked == true ? "已完成" : "已恢复为待办"; });
@@ -60,6 +61,7 @@ internal sealed partial class PlannerWindow
             summary.Children.Add(new TextBlock { Text = string.IsNullOrWhiteSpace(note.Text) ? imageCount > 0 ? "图文记录" : "空白记录" : Preview(note.Text, 90), TextWrapping = TextWrapping.Wrap });
             if (imageCount > 0) summary.Children.Add(Hint($"{imageCount} 张图片 · 已保存在本机"));
             summary.Children.Add(Hint((note.Pinned ? "已置顶 · " : "") + note.Updated.LocalDateTime.ToString("M月d日 HH:mm")));
+            AddGroupLinks(summary,WorkKind.Note,note.Id);
             var select = new Button { Content = summary, HorizontalAlignment = HorizontalAlignment.Stretch, HorizontalContentAlignment = HorizontalAlignment.Left,
                 Padding = new Thickness(4), BorderThickness = new Thickness(0), Background = new SolidColorBrush(Colors.Transparent) };
             Name(select, "打开记录：" + Preview(note.Text, 35));

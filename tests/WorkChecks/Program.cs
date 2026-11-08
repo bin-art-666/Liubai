@@ -7,8 +7,12 @@ void Check(bool value, string message) { if (!value) throw new Exception(message
 async Task Reject(Func<Task> action) { bool rejected = false; try { await action(); } catch (Exception ex) when (ex is IOException or InvalidDataException) { rejected = true; } Check(rejected, "Invalid state accepted"); }
 try
 {
+    string legacyPath=Path.Combine(root,"legacy-work.json");File.WriteAllText(legacyPath,JsonSerializer.Serialize(WorkDocument.Empty with {Version=1}));
+    var legacyStore=new WorkStore(legacyPath);Check(legacyStore.Data.Version==2&&!legacyStore.ReadOnly,"Legacy group schema migration");
+    Check(JsonDocument.Parse(File.ReadAllText(legacyPath)).RootElement.GetProperty("Version").GetInt32()==1,"Opening legacy groups does not overwrite file");
+    await legacyStore.Create("迁移测试");Check(JsonDocument.Parse(File.ReadAllText(legacyPath)).RootElement.GetProperty("Version").GetInt32()==2&&JsonDocument.Parse(File.ReadAllText(legacyPath+".bak")).RootElement.GetProperty("Version").GetInt32()==1,"Legacy backup retained on first change");
     string path = Path.Combine(root, "workspaces.json"); var store = new WorkStore(path);
-    Check(!store.ReadOnly && store.Data.Version == 1 && store.Data.Scenes.Length == 0 && store.Data.Images.Length == 0, "Empty store");
+    Check(!store.ReadOnly && store.Data.Version == 2 && store.Data.Scenes.Length == 0 && store.Data.Images.Length == 0, "Empty store");
     Guid first = await store.Create("网络第二章"); Check(store.Data.Active == first && store.Data.Scenes.Single().Name == "网络第二章", "Create and activate");
     var reference = new WorkRef(WorkKind.Task, Guid.NewGuid()); await store.Link(first, [reference, reference]);
     Check(store.Data.Scenes.Single().Items.Length == 1, "Reference deduplication");

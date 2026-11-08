@@ -30,7 +30,12 @@ internal sealed partial class StationWindow
     static Button ItemAction(string name, string data, bool header = false)
     {
         var button = IconButton("", name);
-        if (!header) button.Style = PanelTheme.Style("ItemAction");
+        SetStationPath(button,data);
+        if(data==TrashPath||data==SweepPath) DangerAction(button);
+        return button;
+    }
+    static void SetStationPath(Microsoft.UI.Xaml.Controls.Primitives.ButtonBase button,string data)
+    {
         var path = (Microsoft.UI.Xaml.Shapes.Path)Microsoft.UI.Xaml.Markup.XamlReader.Load(
             "<Path xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation' Data='" + data + "' StrokeThickness='1.4' StrokeStartLineCap='Round' StrokeEndLineCap='Round' StrokeLineJoin='Round'/>" );
         path.SetBinding(Microsoft.UI.Xaml.Shapes.Shape.StrokeProperty, new Binding { Source = button, Path = new PropertyPath("Foreground") });
@@ -38,7 +43,6 @@ internal sealed partial class StationWindow
         var canvas = new Canvas { Width = 20, Height = 20, IsHitTestVisible = false }; canvas.Children.Add(path);
         button.Content = PanelTheme.Track(new Viewbox { Child = canvas, IsHitTestVisible = false },
             static view => view.Width = view.Height = PanelTheme.Value<double>("IconSize"));
-        return button;
     }
     static Border CreatePreview(StationItem item)
     {
@@ -48,7 +52,7 @@ internal sealed partial class StationWindow
         PanelTheme.Track(host, static border => border.CornerRadius = PanelTheme.Value<CornerRadius>("ControlRadius"));
         AutomationProperties.SetName(host, "内容预览"); return host;
     }
-    async Task LoadPreview(StationItem item, Border host, Border card, TextBlock meta, Border grip, Button copy, Button open, int version, string label, CancellationToken cancellation)
+    async Task LoadPreview(StationItem item, Border host, Border card, TextBlock meta, FrameworkElement grip, Button copy, Button open, int version, string label, CancellationToken cancellation)
     {
         bool entered = false, available = false;
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
@@ -108,7 +112,7 @@ internal sealed partial class StationWindow
             if (entered) previewSlots.Release();
             if (!destroyed && version == renderVersion && !cancellation.IsCancellationRequested)
             {
-                meta.Text = available ? label + " · 拖动取出" : label + " · 原位置暂不可用或已失效";
+                meta.Text = available ? label : label + " · 原位置暂不可用或已失效";
                 grip.CanDrag = available; copy.IsEnabled = available; open.IsEnabled = available;
             }
         }

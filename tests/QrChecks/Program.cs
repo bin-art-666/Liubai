@@ -39,4 +39,26 @@ foreach (string value in new[] { "https://example.com", "http://localhost/a", "h
 foreach (string value in new[] { "javascript:alert(1)", "file:///C:/test", "ms-settings:", "microsoft-edge:https://example.com", "WIFI:T:WPA;S:test;;", "example.com", " https://example.com", "https://example.com\n", "ordinary text" }) Check(QrDecoder.WebUri(value) == null, "non-web result");
 try { QrDecoder.Crop(canvas, 800, 300, -1, 0, 40, 40); throw new Exception("negative accepted"); } catch (ArgumentOutOfRangeException) { checks++; }
 try { QrDecoder.Decode(new byte[4], int.MaxValue, 2); throw new Exception("oversize accepted"); } catch (ArgumentException) { checks++; }
-Console.WriteLine($"PASS: {checks} QR checks");
+foreach(string value in new[]{
+    "https://open.weixin.qq.com/connect/confirm?uuid=local-test",
+    "https://OPEN.WEIXIN.QQ.COM/connect/confirm/?uuid=local-test",
+    "https://open.weixin.qq.com./connect/%63onfirm?uuid=local-test",
+    "https://open.weixin.qq.com/connect/qrconnect?appid=fixture",
+    "https://open.weixin.qq.com/connect/oauth2/authorize?appid=fixture",
+    "https://login.weixin.qq.com/l/local-test","https://login.wechat.com/l/local-test"})
+{
+    var route=QrRouting.Analyze(value);
+    Check(route.Kind==QrRouteKind.WeChatAuthorization&&route.BrowserUri==null,"WeChat authorization never browser-routed");
+    Check(!route.DisplayText.Contains("local-test")&&!route.DisplayText.Contains("appid="),"Authorization parameters hidden");
+}
+foreach(string value in new[]{"https://ssl.ptlogin2.qq.com/ptqrlogin?ptqrtoken=fixture","https://xui.ptlogin2.qq.com/cgi-bin/xlogin","https://login.qq.com/qr/fixture"})
+    Check(QrRouting.Analyze(value).Kind==QrRouteKind.QqAuthorization&&QrRouting.BrowserUri(value)==null,"QQ login stays out of browser route");
+foreach(string value in new[]{"https://example.com/","https://mp.weixin.qq.com/s/fixture","https://qm.qq.com/q/fixture","https://open.weixin.qq.com.evil.example/connect/confirm","https://example.com/?next=https://open.weixin.qq.com/connect/confirm","https://open.weixin.qq.com/connect/confirmation"})
+    Check(QrRouting.Analyze(value).Kind==QrRouteKind.Web&&QrRouting.BrowserUri(value)!=null,"Exact hosts and path boundaries preserve ordinary links");
+foreach(string value in new[]{"weixin://dl/fixture","mqqapi://card/fixture","tencent://message/fixture"})
+    Check(QrRouting.Analyze(value).Kind==QrRouteKind.ClientOnly&&QrRouting.BrowserUri(value)==null,"Client schemes never fabricated or executed");
+foreach(string value in new[]{"javascript:alert(1)","file:///C:/fixture","https://open.weixin.qq.com@evil.example/connect/confirm"," https://example.com/","https://example.com/\n"})
+    Check(QrRouting.BrowserUri(value)==null,"Unsafe input not executable");
+var authorization=QrDecoder.Decode(Make("https://open.weixin.qq.com/connect/confirm?uuid=fixture",320),320,320);
+Check(authorization.Length==1&&QrRouting.Analyze(authorization[0]).Kind==QrRouteKind.WeChatAuthorization,"Generated login QR classified after local decoding");
+Console.WriteLine($"PASS: {checks} QR decoding and routing checks");

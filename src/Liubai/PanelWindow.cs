@@ -24,6 +24,8 @@ internal abstract class PanelWindow : Window
     bool VisibilityProtected => modalDepth > 0 || dragDepth > 0;
     protected virtual bool DismissOnOutside => true;
     protected virtual bool Frameless => true;
+    protected virtual bool HandlePanelWheel(Native.Point point,int delta,bool horizontal)=>false;
+    protected virtual bool UsesPanelWheel=>false;
 
     protected PanelWindow()
     {
@@ -71,7 +73,8 @@ internal abstract class PanelWindow : Window
         caption?.Queue();
         outsideClicks?.Dispose();
         outsideClicks = new OutsideClickWatcher(WinRT.Interop.WindowNative.GetWindowHandle(this), DispatcherQueue,
-            () => { if (!VisibilityProtected && DismissOnOutside) Hide(); });
+            () => { if (!VisibilityProtected && DismissOnOutside) Hide(); },
+            UsesPanelWheel?(point,delta,horizontal)=>!VisibilityProtected&&HandlePanelWheel(point,delta,horizontal):null);
         NotifyPresentationChanged();
     }
 

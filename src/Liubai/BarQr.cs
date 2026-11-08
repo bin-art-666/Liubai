@@ -31,7 +31,7 @@ public sealed partial class BarWindow
             qrFeedbackVersion++; if (qrTip != null) qrTip.IsOpen = false;
             if (closing || manager?.Suspended == true || !Native.MonitorExists(Display.Handle)) return;
             bool launchFailed = false;
-            if (results.Length == 1 && QrDecoder.WebUri(results[0]) is { } uri)
+            if (results.Length == 1 && QrRouting.BrowserUri(results[0]) is { } uri)
             {
                 if (await OpenQrLink(uri)) { ShowQrFeedback("已用 Edge 打开 " + uri.IdnHost); return; }
                 launchFailed = true;
@@ -64,7 +64,7 @@ public sealed partial class BarWindow
     }
     internal static async Task<bool> OpenQrLink(Uri uri)
     {
-        if (QrDecoder.WebUri(uri.AbsoluteUri) == null) return false;
+        if (QrRouting.BrowserUri(uri.AbsoluteUri) == null) return false;
         try { return await Launcher.LaunchUriAsync(new Uri("microsoft-edge:" + uri.AbsoluteUri)); }
         catch { return false; }
     }

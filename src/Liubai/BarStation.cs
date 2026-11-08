@@ -42,7 +42,7 @@ public sealed partial class BarWindow
         clockWindow?.Hide();
         App.HideAi(false);
         settingsWindow?.Hide(); plannerWindow?.Hide(); qrResults?.Hide(); manager?.HideOtherPanels(this);
-        if (stationWindow is null) { stationWindow = new StationWindow(App.Station, Display); stationWindow.WorkRequested += OpenWorkScene; }
+        if (stationWindow is null) { stationWindow = new StationWindow(App.Station, Display); stationWindow.ItemRequested += OpenWorkItem; stationWindow.SearchRequested += OpenUnifiedSearch; }
         stationWindow.Open(Display, windowShown ? AppWindow.Position.Y + AppWindow.Size.Height : Display.Info.Work.Top, forDrop);
         return true;
     }

@@ -5,22 +5,26 @@ namespace Liubai;
 internal enum StationKind { File, Folder, Text, Link }
 internal sealed record StationInput(StationKind Kind, string Value, string Title = "");
 internal sealed record StationItem(Guid Id, StationKind Kind, string Value, string Title, DateTimeOffset Created);
-internal sealed record StationDocument(int Version, StationItem[] Items, int Capacity = StationStore.DefaultCapacity, string ArchiveDirectory = "", bool RemoveAfterArchive = true);
+internal sealed record StationDocument(int Version, StationItem[] Items, int Capacity = StationStore.DefaultCapacity, string ArchiveDirectory = "", bool RemoveAfterArchive = true, StationActions? Actions = null);
 internal sealed record StationAddResult(int Added, int Duplicates);
 
 // Only references and text are stored. No operation in this store touches source files.
-internal sealed class StationStore
+internal sealed partial class StationStore
 {
     internal const int DefaultCapacity = 200, MaximumCapacity = 2000, MaximumText = 20000;
     const long MaximumDocumentBytes = 256L * 1024 * 1024;
     readonly string path;
     readonly SemaphoreSlim gate = new(1, 1);
-    StationDocument data = new(1, []);
+    StationDocument data = new(2, []);
     bool preserveBackup;
     internal IReadOnlyList<StationItem> Items => Array.AsReadOnly(data.Items);
     internal int Capacity => data.Capacity;
     internal string ArchiveDirectory => data.ArchiveDirectory;
     internal bool RemoveAfterArchive => data.RemoveAfterArchive;
+    internal StationActions Actions => data.Actions ?? new();
+    internal Task UpdateActions(StationActions value) { value.Validate(); return Change(d => d with { Actions = value }); }
+    internal Task Edit(Guid id, string value, string title) => Change(d => d with { Items = d.Items.Select(i => i.Id == id ? i with { Value = i.Kind == StationKind.Text ? Normalize(new(i.Kind, value)).Value : i.Value, Title = Normalize(new(i.Kind, i.Value, title)).Title } : i).ToArray() });
+    internal Task Relocate(Guid id,string path) => Change(d=>d with { Items=d.Items.Select(i=>i.Id==id&&i.Kind is StationKind.File or StationKind.Folder ? i with {Value=Normalize(new(i.Kind,path)).Value} : i).ToArray() });
     internal string AttachmentDirectory => Path.Combine(Path.GetDirectoryName(path)!, "station-files");
     internal string WindowLayoutPath => Path.Combine(Path.GetDirectoryName(path)!, "station-window.json");
     internal bool ReadOnly { get; }
@@ -44,7 +48,8 @@ internal sealed class StationStore
     {
         if (new FileInfo(path).Length > MaximumDocumentBytes) throw new InvalidDataException("中转站文件过大。");
         var value = JsonSerializer.Deserialize<StationDocument>(File.ReadAllText(path)) ?? throw new InvalidDataException("内容为空。");
-        if (value.Version != 1) throw new NotSupportedException();
+        if (value.Version is not (1 or 2)) throw new NotSupportedException();
+        value=value with {Version=2};
         Validate(value); return value;
     }
     internal static Uri? WebUri(string value) => !value.Any(char.IsControl) && value == value.Trim()
@@ -68,6 +73,7 @@ internal sealed class StationStore
         ? "path:" + value.ToUpperInvariant() : kind + ":" + value;
     static void Validate(StationDocument document)
     {
+        document.Actions?.Validate();
         if (document.Items == null || document.Items.Length > MaximumCapacity || document.Capacity is < 1 or > MaximumCapacity
             || document.ArchiveDirectory is null || document.ArchiveDirectory.Length > 32767
             || document.ArchiveDirectory.Length > 0 && (!Path.IsPathFullyQualified(document.ArchiveDirectory) || document.ArchiveDirectory.Any(char.IsControl))) throw new InvalidDataException("中转站条目或设置无效。");

@@ -57,7 +57,7 @@ internal sealed partial class SettingsWindow
             Value = options.HoldMilliseconds / 1000d, SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Inline, IsEnabled = !App.GuardOptions.ReadOnly };
         AutomationProperties.SetName(guardHold, "屏幕守护触发等待时间"); panel.Children.Add(guardHold);
         panel.Children.Add(Hint("可设置 0.5～5 秒，默认 1.5 秒。时间越长，越不容易被路过的人触发。右键盾牌可暂停 10 分钟或立即恢复，暂停期间释放摄像头。"));
-        guardMessage = new TextBox { Header = "自定义提示内容", Text = options.Message, MaxLength = 200, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, IsEnabled = !App.GuardOptions.ReadOnly };
+        guardMessage = new TextBox { Header = "自定义提示内容", AcceptsReturn = true, Text = options.Message, MaxLength = 200, TextWrapping = TextWrapping.Wrap, IsEnabled = !App.GuardOptions.ReadOnly };
         AutomationProperties.SetName(guardMessage, "屏幕守护提示内容"); panel.Children.Add(guardMessage);
         var test = new Button { Content = "测试提醒（不打开摄像头）" };
         test.Click += (_, _) => { if (SaveGuardOptions()) App.Guard.TestAlert(); }; panel.Children.Add(test);

@@ -82,6 +82,7 @@ internal sealed partial class SettingsWindow : PanelWindow
         stack.Children.Add(BuildGuardSettings());
         stack.Children.Add(BuildPrivacySettings());
         stack.Children.Add(BuildAiSettings());
+        stack.Children.Add(BuildHelpSettings());
         var appearance = new StackPanel { Spacing = 16 };
         height = AddSlider(appearance, "顶栏高度", "最小 1，默认 36；低于 24 时通过托盘打开设置。", AppearanceStore.MinimumHeight, AppearanceStore.MaximumHeight, " px", PreviewHeight);
         var resetHeight = new Button { Content = "恢复默认高度", HorizontalAlignment = HorizontalAlignment.Left };

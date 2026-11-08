@@ -18,9 +18,15 @@ internal sealed class FocusWindow : UtilityPanel
         {
             var task = App.Planner.Data.Tasks.FirstOrDefault(t => t.Id == taskId) ?? throw new IOException("待办已移除。");
             if (!double.IsFinite(minutes.Value) || minutes.Value < 1 || minutes.Value > 240) throw new IOException("时长为 1～240 分钟。");
+            if(App.Clock.Data.Countdown is { State: ClockState.Running or ClockState.Paused } previous)
+            {
+                if(await new ContentDialog { XamlRoot=Layout.XamlRoot,Title="已有计时正在运行",Content="结束当前计时，再开始这个任务？已有专注用时会保留，待办不会自动完成。",PrimaryButtonText="结束并开始",CloseButtonText="取消",DefaultButton=ContentDialogButton.Close }.ShowAsync()!=ContentDialogResult.Primary) return;
+                if(App.Work.Store.Data.Focus is {} old && old.ClockId==previous.Id) await App.Work.Store.FinishFocus(old.TaskId,"切换到其他任务",Elapsed(previous));
+                await App.Clock.CancelCountdown();
+            }
             await App.Clock.StartCountdown((int)Math.Round(minutes.Value * 60), task.Title[..Math.Min(120, task.Title.Length)], DateTimeOffset.Now);
             var clock = App.Clock.Data.Countdown!;
-            try { await App.Work.Store.SetFocus(new(task.Id, clock.Id, task.Title)); }
+            try { await App.Work.Store.SetFocus(new(task.Id, clock.Id, task.Title, DateTimeOffset.Now)); }
             catch { if (App.Clock.Data.Countdown?.Id == clock.Id) await App.Clock.CancelCountdown(); throw; }
             StatusLine.Text = "专注已开始，收起面板后继续计时。";
         });
@@ -31,8 +37,10 @@ internal sealed class FocusWindow : UtilityPanel
         });
         finish.Click += async (_, _) => await Operate(async () =>
         {
-            if (OwnCountdown()) await App.Clock.CancelCountdown();
-            await App.Work.Store.Resume(taskId, resume.Text); resume.Text = "";
+            var clock=OwnCountdown()?App.Clock.Data.Countdown:null;
+            await App.Work.Store.FinishFocus(taskId,resume.Text,clock==null?0:Elapsed(clock));
+            if(clock!=null && App.Clock.Data.Countdown?.Id==clock.Id) await App.Clock.CancelCountdown();
+            resume.Text="";
             StatusLine.Text = "进展已保存在本机，待办状态未改变。";
         });
         App.Clock.Changed += Refresh; App.Work.Store.Changed += Refresh;
@@ -43,15 +51,20 @@ internal sealed class FocusWindow : UtilityPanel
         taskId = id; Body.Children.Clear(); resume.Text = "";
         string title = App.Planner.Data.Tasks.FirstOrDefault(t => t.Id == id)?.Title ?? App.Work.Store.Data.Focus?.Title ?? "接续记录";
         Body.Children.Add(new TextBlock { Text = title, FontSize = 18, TextWrapping = TextWrapping.Wrap });
-        if (App.Work.Store.Data.Resumes.FirstOrDefault(r => r.TaskId == id) is { } previous)
+        if (App.Work.Store.Data.Resumes.FirstOrDefault(r => r.TaskId == id && !string.IsNullOrWhiteSpace(r.Text)) is { } previous)
             Body.Children.Add(Hint("上次进展 · " + previous.Updated.LocalDateTime.ToString("M/d HH:mm") + "\n" + previous.Text));
         Body.Children.Add(minutes); Body.Children.Add(start); Body.Children.Add(pause); Body.Children.Add(resume); Body.Children.Add(finish);
-        Body.Children.Add(Hint("复用现有倒计时和提醒，已有倒计时时不会覆盖。顶部细线显示进度，点击任务标题可回来记录进展。")); Refresh(); Present(display, top, 620);
+        Body.Children.Add(Hint("复用现有倒计时和提醒，切换已有计时需要确认。顶部细线显示进度，点击任务标题可回来记录进展。")); Refresh(); Present(display, top, 620);
+    }
+    static int Elapsed(ClockEntry clock)
+    {
+        long remaining=clock.State==ClockState.Running&&clock.EndsAt is {} end?Math.Max(0,(end-DateTimeOffset.Now).Ticks):clock.State==ClockState.Finished?0:clock.RemainingTicks;
+        return Math.Clamp(clock.DurationSeconds-(int)TimeSpan.FromTicks(remaining).TotalSeconds,0,clock.DurationSeconds);
     }
     bool OwnCountdown() => App.Work.Store.Data.Focus is { } f && f.TaskId == taskId && App.Clock.Data.Countdown?.Id == f.ClockId;
     void Refresh()
     {
-        start.IsEnabled = !operating && App.Clock.Data.Countdown?.State is not (ClockState.Running or ClockState.Paused);
+        start.IsEnabled = !operating && !App.Clock.ReadOnly && !(OwnCountdown()&&App.Clock.Data.Countdown?.State is ClockState.Running or ClockState.Paused);
         pause.IsEnabled = !operating && OwnCountdown() && App.Clock.Data.Countdown?.State is ClockState.Running or ClockState.Paused;
         pause.Content = App.Clock.Data.Countdown?.State == ClockState.Paused ? "继续专注" : "暂停专注"; finish.IsEnabled = !operating;
     }

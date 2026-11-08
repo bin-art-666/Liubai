@@ -26,6 +26,14 @@ public sealed partial class BarWindow
         capacity.Value = 1; await settingsWindow.FlushStationOptions();
         if (store.Items.Count != items) throw new Exception("Lowering capacity deleted records");
         capacity.Value = original; remove.IsOn = true;
+        var help = StationControls<Expander>(settingsRoot).Single(e=>Equals(e.Header,"帮助"));
+        help.IsExpanded=true;await Task.Delay(100);
+        if(help.Content is not Expander stationHelp||!Equals(stationHelp.Header,"中转站"))throw new Exception("Station help entry missing");
+        stationHelp.IsExpanded=true;await Task.Delay(100);
+        var instructions=string.Join("\n",StationControls<TextBlock>(stationHelp).Select(t=>t.Text));
+        if(!instructions.Contains("Ctrl+Z")||!instructions.Contains("不会删除原文件")||!instructions.Contains("归档与导入"))throw new Exception("Station help content incomplete");
+        help.IsExpanded=false;
+        checks.Add("Settings help lazily exposes station instructions, archive safety and shortcuts");
         await settingsWindow.FlushStationOptions(); settingsWindow.Hide(); await settingsWindow.FlushStationOptions();
         checks.Add("Native capacity and archive toggles persist; lowering capacity preserves existing records");
         string directory = Path.Combine(App.DataDirectory, "archive-dialog-cancel");
@@ -33,8 +41,8 @@ public sealed partial class BarWindow
         OpenStation();
         var stationRoot = (DependencyObject)stationWindow!.Content;
         var archive = StationControls<Button>(stationRoot).Single(b => AutomationProperties.GetName(b) == "归档到文件夹");
-        if (archive.Parent is not StackPanel header || header.Children[0] is not Button clear || AutomationProperties.GetName(clear) != "清空中转站" || header.Children[1] != archive
-            || header.Children.Count != 5) throw new Exception("Header actions must precede expand, pin and close");
+        if (archive.Parent is not StackPanel header || header.Children[1] is not Button clear || AutomationProperties.GetName(clear) != "清空中转站" || header.Children[2] != archive
+            || header.Children.Count != 3 || header.Children[0] is not Button search || !AutomationProperties.GetName(search).StartsWith("统一搜索")) throw new Exception("Search, clear and archive must share header commands");
         var pending = stationWindow.Archive();
         ContentDialog? dialog = null;
         long deadline = Environment.TickCount64 + 3000;

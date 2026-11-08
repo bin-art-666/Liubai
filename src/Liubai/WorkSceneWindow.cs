@@ -67,7 +67,7 @@ internal sealed class WorkSceneWindow : UtilityPanel
         {
             await Guard(async () =>
             {
-                var dialog = new ContentDialog { XamlRoot = Layout.XamlRoot, Title = "现场中的文字", Content = new TextBox { Text = text, IsReadOnly = true, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MaxHeight = 380 }, PrimaryButtonText = "复制", CloseButtonText = "关闭", DefaultButton = ContentDialogButton.Close };
+                var dialog = new ContentDialog { XamlRoot = Layout.XamlRoot, Title = "现场中的文字", Content = new TextBox { AcceptsReturn = true, Text = text, IsReadOnly = true, TextWrapping = TextWrapping.Wrap, MaxHeight = 380 }, PrimaryButtonText = "复制", CloseButtonText = "关闭", DefaultButton = ContentDialogButton.Close };
                 if (await dialog.ShowAsync() == ContentDialogResult.Primary) { var data = new Windows.ApplicationModel.DataTransfer.DataPackage(); data.SetText(text); Windows.ApplicationModel.DataTransfer.Clipboard.SetContent(data); }
             });
         }

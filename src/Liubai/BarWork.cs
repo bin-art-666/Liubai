@@ -15,8 +15,8 @@ public sealed partial class BarWindow
     {
         if (item.Kind == WorkKind.Station)
         {
-            var entry = item.Asset is { } asset ? new StationItem(item.Id, Enum.Parse<StationKind>(asset.Kind), asset.Value, asset.Title, DateTimeOffset.Now)
-                : App.Station.Items.FirstOrDefault(s => s.Id == item.Id) ?? throw new IOException("该暂存项已移除。");
+            var entry = App.Station.Items.FirstOrDefault(s => s.Id == item.Id) ?? (item.Asset is { } asset ? new StationItem(item.Id, Enum.Parse<StationKind>(asset.Kind), asset.Value, asset.Title, DateTimeOffset.Now)
+                : throw new IOException("该暂存项已移除。"));
             if (entry.Kind is StationKind.File or StationKind.Folder)
             {
                 var storage = await StationTransfer.Storage(entry);

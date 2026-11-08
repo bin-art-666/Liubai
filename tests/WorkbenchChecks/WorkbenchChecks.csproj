@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable></PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../src/Liubai/UnifiedSearch.cs" Link="UnifiedSearch.cs" />
+    <Compile Include="../../src/Liubai/QuickLookPolicy.cs" Link="QuickLookPolicy.cs" />
+    <Compile Include="../../src/Liubai/StationHistory.cs" Link="StationHistory.cs" />
+    <Compile Include="../../src/Liubai/StationStore.cs" Link="StationStore.cs" />
+    <Compile Include="../../src/Liubai/StationActions.cs" Link="StationActions.cs" />
+    <Compile Include="../../src/Liubai/StationArchive.cs" Link="StationArchive.cs" />
+    <Compile Include="../../src/Liubai/PlannerStore.cs" Link="PlannerStore.cs" />
+    <Compile Include="../../src/Liubai/ReminderPolicy.cs" Link="ReminderPolicy.cs" />
+    <Compile Include="../../src/Liubai/WorkStore.cs" Link="WorkStore.cs" />
+    <Compile Include="../../src/Liubai/WorkHub.cs" Link="WorkHub.cs" />
+    <Compile Include="../../src/Liubai/WorkArchive.cs" Link="WorkArchive.cs" />
+    <Compile Include="../../src/Liubai/WorkArchiveImport.cs" Link="WorkArchiveImport.cs" />
+  </ItemGroup>
+</Project>

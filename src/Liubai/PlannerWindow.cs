@@ -105,11 +105,11 @@ internal sealed partial class PlannerWindow : PanelWindow
         taskSearch.TextChanged += (_, _) => { taskLimit = 50; RefreshLists(); };
         noteSearch.TextChanged += (_, _) => { noteLimit = 50; RefreshLists(); };
         taskFilter.SelectionChanged += (_, _) => { taskLimit = 50; RefreshLists(); };
-        store.Changed += StoreChanged;
+        store.Changed += StoreChanged; App.WorkStore.Changed += StoreChanged;
         if (App.Reminders != null) App.Reminders.StatusChanged += ReminderStatus;
         Closed += (_, _) =>
         {
-            destroyed = true; saveTimer.Stop(); dayTimer.Stop(); store.Changed -= StoreChanged;
+            destroyed = true; saveTimer.Stop(); dayTimer.Stop(); store.Changed -= StoreChanged; App.WorkStore.Changed -= StoreChanged;
             if (App.Reminders != null) App.Reminders.StatusChanged -= ReminderStatus;
         };
         ReminderStatus();
@@ -249,7 +249,7 @@ internal sealed partial class PlannerWindow : PanelWindow
     {
         using var lease = KeepOpen();
         var title = new TextBox { Header = "标题", Text = item.Title, MaxLength = 200 };
-        var detail = new TextBox { Header = "备注", Text = item.Detail, MaxLength = 20000, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, Height = 140 };
+        var detail = new TextBox { Header = "备注", AcceptsReturn = true, Text = item.Detail, MaxLength = 20000, TextWrapping = TextWrapping.Wrap, Height = 140 };
         var schedule = new TaskScheduleEditor(); schedule.Load(item.Date, item.Time, item.RemindBefore);
         var error = Hint("");
         var fields = new StackPanel { Spacing = 12 }; fields.Children.Add(title); fields.Children.Add(schedule.Root); fields.Children.Add(detail);

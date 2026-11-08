@@ -20,7 +20,7 @@ public sealed partial class BarWindow
         focusProgress.SetBinding(Border.BackgroundProperty, new Binding { Source = clockButton, Path = new PropertyPath("Foreground") }); layers.Children.Add(focusProgress);
         focusEntry.Click += (_, _) => { if (!ToolbarClickBlocked && App.WorkStore.Data.Focus is { } focus) OpenFocus(focus.TaskId, Display.Device); };
         surface.SizeChanged += (_, _) => RefreshFocusBar();
-        App.FocusRequested += OpenFocus; App.WorkStore.Changed += RefreshFocusBar;
+        App.FocusRequested += OpenFocus; App.WorkspaceRequested += OpenWorkspace; App.WorkStore.Changed += RefreshFocusBar;
         focusReady = true; RefreshFocusBar();
     }
     void OpenFocus(Guid task, string device)
@@ -28,6 +28,11 @@ public sealed partial class BarWindow
         if (device != Display.Device || closing || PanelModal || manager?.HasModal == true) return;
         HidePanels(false); manager?.HideOtherPanels(this); focusWindow ??= new FocusWindow();
         focusWindow.Open(task, Display, windowShown ? AppWindow.Position.Y + AppWindow.Size.Height : Display.Info.Work.Top);
+    }
+    void OpenWorkspace(Guid group,string device)
+    {
+        if(device!=Display.Device || closing || PanelModal || manager?.HasModal==true) return;
+        if(OpenStation()) stationWindow!.OpenWorkspace(group);
     }
     void RefreshFocusBar()
     {
@@ -47,6 +52,6 @@ public sealed partial class BarWindow
     }
     void StopFocusBar()
     {
-        App.FocusRequested -= OpenFocus; App.WorkStore.Changed -= RefreshFocusBar;
+        App.FocusRequested -= OpenFocus; App.WorkspaceRequested -= OpenWorkspace; App.WorkStore.Changed -= RefreshFocusBar;
     }
 }

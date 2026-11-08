@@ -15,14 +15,13 @@ internal sealed partial class StationWindow
     readonly ComboBox compactCategory = new() { Width = 140 }, periodFilter = new() { MaxWidth = 180, HorizontalAlignment = HorizontalAlignment.Stretch };
     readonly TextBox search = new() { PlaceholderText = "搜索文件名、文字或链接", MaxLength = 200 };
     readonly Button viewAllAfterDrop = new() { Content = "查看全部", Visibility = Visibility.Collapsed };
-    readonly TextBlock introHint = Hint("拖入文件、文字或链接，切换窗口后再取走。");
     Microsoft.UI.Dispatching.DispatcherQueueTimer searchTimer = null!, dayTimer = null!;
     DateTime renderedDay;
     bool querySync;
     ScrollViewer browserScroll = null!;
     sealed record CategoryChoice(StationCategory Value, string Label) { public override string ToString() => Label; }
     StationQuery ActiveQuery => Detached ? expandedQuery : new();
-    StationItem[] CurrentItems() => ActiveQuery.Apply(store.Items, DateTimeOffset.Now, TimeZoneInfo.Local);
+    StationItem[] CurrentItems() => ActiveQuery.Apply(WorkspaceItems(), DateTimeOffset.Now, TimeZoneInfo.Local);
     void InitializeBrowser(ScrollViewer scroll)
     {
         expandedQuery = panelLayout.Data.View ?? new();
@@ -44,7 +43,7 @@ internal sealed partial class StationWindow
         searchTimer = DispatcherQueue.CreateTimer(); searchTimer.IsRepeating = false; searchTimer.Interval = TimeSpan.FromMilliseconds(250);
         searchTimer.Tick += (_, _) => CommitQuery();
         search.TextChanged += (_, _) => { if (querySync) return; expandedQuery = expandedQuery with { Search = search.Text }; searchTimer.Stop(); searchTimer.Start(); };
-        categories.SelectionChanged += (_, _) => { if (!querySync && categories.SelectedItem is ListViewItem { Tag: StationCategory value }) { expandedQuery = expandedQuery with { Category = value }; CommitQuery(); } };
+        categories.SelectionChanged += async (_, _) => { if (!querySync && categories.SelectedItem is ListViewItem { Tag: WorkspaceChoice group }) { await Run(async () => { workspaceId=group.Id; ungrouped=group.Ungrouped; workspacePage=0; expandedQuery=expandedQuery with {Category=StationCategory.All}; ClearSelection(); await App.Work.Store.Activate(group.Id); Refresh(); }); return; } if (!querySync && categories.SelectedItem is ListViewItem { Tag: StationCategory value }) { expandedQuery = expandedQuery with { Category = value }; CommitQuery(); } };
         compactCategory.SelectionChanged += (_, _) => { if (!querySync && compactCategory.SelectedItem is CategoryChoice value) { expandedQuery = expandedQuery with { Category = value.Value }; CommitQuery(); } };
         periodFilter.SelectionChanged += (_, _) => { if (!querySync && periodFilter.SelectedIndex >= 0) { expandedQuery = expandedQuery with { Period = (StationPeriod)periodFilter.SelectedIndex }; CommitQuery(); } };
         viewAllAfterDrop.Click += (_, _) => ShowAllItems();
@@ -61,7 +60,8 @@ internal sealed partial class StationWindow
         browserBody.ColumnSpacing = wide ? 14 : 0;
         compactCategory.Visibility = Detached && !wide ? Visibility.Visible : Visibility.Collapsed;
         browseTools.Visibility = Detached ? Visibility.Visible : Visibility.Collapsed;
-        introHint.Visibility = Detached ? Visibility.Collapsed : Visibility.Visible;
+        workspaceLabelHost.Visibility=wide?Visibility.Collapsed:Visibility.Visible;
+        if(workspaceDrag!=null)workspaceDrag.Visibility=Detached&&Scene()!=null?Visibility.Visible:Visibility.Collapsed;
     }
     void SaveQuery()
     {
@@ -73,7 +73,7 @@ internal sealed partial class StationWindow
     {
         expandedQuery = new(); querySync = true; search.Text = ""; periodFilter.SelectedIndex = 0; querySync = false; viewAllAfterDrop.Visibility = Visibility.Collapsed; CommitQuery();
     }
-    void CommitQuery() { SaveQuery(); visibleItems = 50; if (IsOpen) { Refresh(); browserScroll.ChangeView(null, 0, null, true); } }
+    void CommitQuery() { ClearSelection(); SaveQuery(); visibleItems = 50; if (IsOpen) { Refresh(); browserScroll.ChangeView(null, 0, null, true); } }
     void RefreshCategories(DateTimeOffset now)
     {
         querySync = true;
@@ -91,6 +91,19 @@ internal sealed partial class StationWindow
                 var item = new ListViewItem { Tag = category, Content = row, Padding = new Thickness(8, 10, 6, 10) }; AutomationProperties.SetName(item, label); categories.Items.Add(item);
                 var choice = new CategoryChoice(category, label); compactCategory.Items.Add(choice);
                 if (category == expandedQuery.Category) { categories.SelectedItem = item; compactCategory.SelectedItem = choice; }
+            }
+            categories.Items.Add(new ListViewItem { Content = "我的分组", IsEnabled = false });
+            foreach (var choice in new[] { new WorkspaceChoice(null,"未分组",true) }.Concat(App.WorkStore.Data.Scenes.OrderByDescending(s=>s.Pinned).Select(s=>new WorkspaceChoice(s.Id,(s.Pinned?"置顶 · ":"")+s.Name))))
+            {
+                var row = new ListViewItem { Tag=choice, Content=new TextBlock { Text=choice.Label,TextTrimming=TextTrimming.CharacterEllipsis }, AllowDrop=choice.Id!=null };
+                row.ContextFlyout=WorkspaceMenu(choice);
+                row.DragEnter+=async (_,_)=> {if(choice.Id is {} id) {row.BorderBrush=new SolidColorBrush(Microsoft.UI.Colors.DodgerBlue);row.BorderThickness=new Thickness(1);await HoverWorkspace(id);}};
+                row.DragLeave+=(_,_)=> {workspaceHoverVersion++;row.ClearValue(Control.BorderBrushProperty);row.ClearValue(Control.BorderThicknessProperty);};
+                row.Unloaded+=(_,_)=>workspaceHoverVersion++;
+                row.DragOver += (_,e) => { e.Handled=true; e.AcceptedOperation=!busy&&StationTransfer.Supported(e.DataView)?Windows.ApplicationModel.DataTransfer.DataPackageOperation.Copy:Windows.ApplicationModel.DataTransfer.DataPackageOperation.None; };
+                row.Drop += async (_,e) => { e.Handled=true; var deferral=e.GetDeferral(); try { if(choice.Id is {} id && await ReceiveForWorkspace(e.DataView,id)) e.AcceptedOperation=Windows.ApplicationModel.DataTransfer.DataPackageOperation.Copy; } finally { deferral.Complete(); } };
+                categories.Items.Add(row);
+                if(workspaceId==choice.Id&&ungrouped==choice.Ungrouped&&expandedQuery.Category==StationCategory.All) categories.SelectedItem=row;
             }
         }
         finally { querySync = false; }

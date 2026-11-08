@@ -143,11 +143,11 @@ public sealed partial class BarWindow : Window
 
     static Viewbox CreateShelfIcon(Button owner)
     {
-        // The selected stacked-card design uses a 24-unit canvas. At 20 px its
-        // visible outline matches the settings glyph's approximately 15 px size.
-        const string data = "M 7 3 L 18 3 C 19.1 3 20 3.9 20 5 L 20 16 "
-            + "M 5 7 L 15 7 C 16.1 7 17 7.9 17 9 L 17 19 C 17 20.1 16.1 21 15 21 L 5 21 C 3.9 21 3 20.1 3 19 L 3 9 C 3 7.9 3.9 7 5 7 Z "
-            + "M 7 12 L 13 12 M 7 16 L 11 16";
+        // Selected square inbox design, on the shared 24-unit toolbar canvas.
+        const string data = "M 6 3 L 18 3 C 19.657 3 21 4.343 21 6 L 21 18 "
+            + "C 21 19.657 19.657 21 18 21 L 6 21 C 4.343 21 3 19.657 3 18 "
+            + "L 3 6 C 3 4.343 4.343 3 6 3 Z "
+            + "M 3 13 L 7.5 13 L 9.5 16 L 14.5 16 L 16.5 13 L 21 13 M 8 7 L 16 7";
         return CreateVectorIcon(owner, data);
     }
 
@@ -200,7 +200,9 @@ public sealed partial class BarWindow : Window
             if (surface.IsLoaded) OpenSettings();
             else surface.Loaded += ShowSettingsOnLoad;
         }
-        if (Environment.GetCommandLineArgs().Contains("--verify-tool-host")) _ = VerifyToolHost();
+        if (Environment.GetCommandLineArgs().Contains("--verify-station-experience")) _ = VerifyStationExperience();
+        else if (Environment.GetCommandLineArgs().Contains("--verify-workbench")) _ = VerifyWorkbench();
+        else if (Environment.GetCommandLineArgs().Contains("--verify-tool-host")) _ = VerifyToolHost();
         else if (Environment.GetCommandLineArgs().Contains("--verify-updates") || Environment.GetCommandLineArgs().Contains("--verify-updates-network")) _ = VerifyUpdates();
         else if (Environment.GetCommandLineArgs().Contains("--verify-modules")) _ = VerifyModules();
         else if (Environment.GetCommandLineArgs().Contains("--verify-toolbar-layout")) _ = VerifyToolbarLayout();

@@ -15,7 +15,7 @@ internal sealed partial class StationWindow : PanelWindow
 {
     readonly StationStore store;
     readonly StackPanel cards = new() { Spacing = 9, Margin = new Thickness(0, 0, 14, 0) };
-    readonly TextBlock count = Hint("");
+    readonly TextBlock stationTitle = PanelTheme.Title("中转站");
     readonly TextBlock status = Hint("");
     readonly ToggleButton pin = new();
     readonly Button expand = IconButton("\uE740", "展开为独立窗口");
@@ -35,7 +35,6 @@ internal sealed partial class StationWindow : PanelWindow
     internal bool Detached { get; private set; }
     internal string DisplayDevice => display.Device;
     internal bool Pinned => pin.IsChecked == true;
-    internal event Action? WorkRequested;
 
     internal StationWindow(StationStore store, DesktopMonitor display)
     {
@@ -58,25 +57,23 @@ internal sealed partial class StationWindow : PanelWindow
         AppWindow.Changed += (_, e) => { if (Detached && !destroyed && (e.DidPositionChange || e.DidSizeChange)) { layoutTimer.Stop(); layoutTimer.Start(); } };
         root.RowDefinitions.Add(new() { Height = GridLength.Auto }); root.RowDefinitions.Add(new() { Height = GridLength.Auto });
         root.RowDefinitions.Add(new() { Height = new GridLength(1, GridUnitType.Star) }); root.RowDefinitions.Add(new() { Height = GridLength.Auto });
-        var titleGrip = new Border { Background = new SolidColorBrush(Colors.Transparent), Child = PanelTheme.Title("中转站") };
+        var titleGrip = new Border { Background = new SolidColorBrush(Colors.Transparent), Child = stationTitle };
         var controls = PanelTheme.Actions();
-        StyleIconButton(pin, "固定中转站"); pin.Content = Glyph("\uE718");
+        StyleIconButton(pin, "固定中转站"); SetStationIcon(pin, "\uE718");
         var close = IconButton("\uE8BB", "收起中转站");
         expand.Click += (_, _) => ToggleDetached(); close.Click += (_, _) => Hide();
-        controls.Children.Add(clear); controls.Children.Add(archive);
-        expand.Margin = new Thickness(8, 0, 0, 0);
+        var unifiedSearch=IconButton("\uE721","统一搜索资料、分组、待办和笔记");unifiedSearch.Click+=(_,_)=>SearchRequested?.Invoke();stationCommands.Children.Add(unifiedSearch);
+        stationCommands.Children.Add(clear); stationCommands.Children.Add(archive);
         controls.Children.Add(expand); controls.Children.Add(pin); controls.Children.Add(close);
-        var header = PanelTheme.Header(titleGrip, controls); root.Children.Add(header);
-        InitializeFloatingCaption(header, controls, () => Detached);
-        var intro = new StackPanel { Spacing = 6 }; intro.Children.Add(introHint); intro.Children.Add(count);
-        var work = new Button { Content = "工作现场", HorizontalAlignment = HorizontalAlignment.Left };
-        work.Click += (_, _) => WorkRequested?.Invoke(); intro.Children.Add(work);
+        var header = InitializeStationHeader(titleGrip, controls); root.Children.Add(header);
+        var intro = new StackPanel { Spacing = 6 };
+
         Grid.SetRow(intro, 1); root.Children.Add(intro);
         var scroll = new ScrollViewer { Content = cards, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
         InitializeBrowser(scroll);
-        var footer = new StackPanel { Spacing = 9 }; footer.Children.Add(status); footer.Children.Add(viewAllAfterDrop);
+        var footer = new StackPanel { Spacing = 9 }; InitializeWorkspace(intro, footer); InitializeSelection(footer); InitializeUndo(footer); footer.Children.Add(status); footer.Children.Add(viewAllAfterDrop);
         footer.Children.Add(cancelArchive); footer.Children.Add(archiveProgress);
-        footer.Children.Add(Hint("虚拟附件自动保存到本机。移除记录不会删除文件。")); Grid.SetRow(footer, 3); root.Children.Add(footer);
+        InitializeStationFeedback(); Grid.SetRow(footer, 3); root.Children.Add(footer);
         clear.Click += async (_, _) => await Clear();
         archive.Click += async (_, _) => await Archive();
         cancelArchive.Click += (_, _) => archiveCancellation?.Cancel();
@@ -92,17 +89,17 @@ internal sealed partial class StationWindow : PanelWindow
             if (saved) ConfirmDrop();
         };
         store.Changed += StoreChanged;
-        Closed += (_, _) => { destroyed = true; EndStationResize(true); layoutTimer.Stop(); archiveCancellation?.Cancel(); renderVersion++; CancelPreviews(); previewCache.Clear(); leaveTimer.Stop(); store.Changed -= StoreChanged; };
-        var shell = new Grid(); shell.Children.Add(root); InitializeStationResize(shell); InitializePanel(shell);
+        Closed += (_, _) => { destroyed = true; EndStationResize(true); layoutTimer.Stop(); archiveCancellation?.Cancel(); renderVersion++; CancelPreviews(); previewCache.Clear(); leaveTimer.Stop(); store.Changed -= StoreChanged; feedbackTimer.Stop(); embeddedSearch?.Stop(); DisposeWorkspace(); };
+        var shell = new Grid(); shell.Children.Add(root); InitializeGroupWheel(shell); InitializeStationResize(shell); InitializeQuickLook(shell); InitializePanel(shell);
     }
     static TextBlock Hint(string text) => PanelTheme.Hint(text);
     static FontIcon Glyph(string glyph) => PanelTheme.Glyph(glyph);
-    static void StyleIconButton(ButtonBase button, string name) => PanelTheme.IconStyle(button, name);
-    static Button IconButton(string glyph, string name)
-    { var button = new Button { Content = Glyph(glyph) }; StyleIconButton(button, name); return button; }
+    static void StyleIconButton(ButtonBase button, string name) => PanelTheme.FramedIconStyle(button, name);
+    internal static Button IconButton(string glyph, string name)
+    { var button = new Button(); StyleIconButton(button, name); SetStationIcon(button,glyph); return button; }
     void UpdatePin()
     {
-        pin.Content = Glyph(Pinned ? "\uE77A" : "\uE718");
+        SetStationIcon(pin, Pinned ? "\uE77A" : "\uE718");
         ToolTipService.SetToolTip(pin, Pinned ? "取消固定" : "固定中转站");
         ((OverlappedPresenter)AppWindow.Presenter).IsAlwaysOnTop = !Detached || Pinned;
     }
@@ -139,7 +136,7 @@ internal sealed partial class StationWindow : PanelWindow
             AppWindow.MoveAndResize(Clamp(bounds));
         }
         else Position(dockTop);
-        expand.Content = Glyph(Detached ? "\uE73F" : "\uE740");
+        SetStationIcon(expand, Detached ? "\uE73F" : "\uE740");
         string name = Detached ? "停靠回顶栏" : "展开为独立窗口";
         AutomationProperties.SetName(expand, name); ToolTipService.SetToolTip(expand, name);
         UpdatePin(); UpdateBrowserMode(); visibleItems = 50; Refresh(); ShowPanel(); UpdateFloatingCaption();
@@ -152,9 +149,10 @@ internal sealed partial class StationWindow : PanelWindow
     }
     internal void Open(DesktopMonitor monitor, int top, bool forDrop = false)
     {
+        if(SearchActive)CloseSearch(false);
         display = monitor; dockTop = top; leaveTimer.Stop(); openedForDrop = forDrop;
         if (!Detached) Position(top);
-        Refresh(); status.Text = store.LoadWarning ?? panelLayout.Warning ?? (store.Items.Count == 0 ? "把内容拖到这里，或直接拖到顶栏收纳盒。" : "拖动卡片内容即可取出；也可点击复制。");
+        Refresh(); status.Text = store.LoadWarning ?? panelLayout.Warning ?? "";
         ShowPanel(!forDrop); dayTimer.Start();
     }
     internal void UpdateDisplay(DesktopMonitor monitor)
@@ -184,13 +182,17 @@ internal sealed partial class StationWindow : PanelWindow
         try
         {
             status.Text = "正在存入…";
+            if(await StationTransfer.InternalItems(view,store) is {} existing)
+            { if(workspaceId is {} group) await App.Work.Store.Link(group,existing.Select(i=>new WorkRef(WorkKind.Station,i.Id))); status.Text="项目已在中转站，分组关联已更新"; openedForDrop=false; return true; }
             using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(60));
             using var import = await StationTransfer.Read(view, store.AttachmentDirectory, cancellation.Token);
             var inputs = import.Inputs;
             if (inputs.Length == 0) throw new InvalidDataException("没有可存入的内容。");
             var before = store.Items.Select(i => i.Id).ToHashSet();
+            using var collection = App.Work.SuspendCollection();
             var result = await store.Add(inputs);
             import.Commit();
+            if(workspaceId is {} currentGroup) await App.Work.Store.Link(currentGroup,inputs.Select(input=>store.Items.First(i=>i.Kind==input.Kind&&i.Value.Equals(input.Value,input.Kind is StationKind.File or StationKind.Folder ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))).Select(i=>new WorkRef(WorkKind.Station,i.Id)));
             status.Text = result.Added == 0 ? "内容已在中转站，无需重复存入。" : $"已存入 {result.Added} 项" + (result.Duplicates > 0 ? $"，忽略 {result.Duplicates} 项重复内容" : "");
             if (ActiveQuery.Filtered && (result.Added == 0 || store.Items.Where(i => !before.Contains(i.Id)).Any(i => !ActiveQuery.Matches(i, DateTimeOffset.Now, TimeZoneInfo.Local))))
             { status.Text += "；部分内容不在当前筛选中，可查看全部。"; viewAllAfterDrop.Visibility = Visibility.Visible; }
@@ -205,26 +207,33 @@ internal sealed partial class StationWindow : PanelWindow
         int total = CurrentItems().Length;
         string clearLabel = ActiveQuery.Filtered ? $"清空当前结果（{total} 项）" : "清空中转站";
         string archiveLabel = ActiveQuery.Filtered ? $"归档当前结果（{total} 项）" : "归档到文件夹";
+        if(workspaceId!=null) clearLabel="移出当前分组中的资料";
+        if(Scene()!=null&&selection.Count==0) archiveLabel="归档整个工作分组";
         AutomationProperties.SetName(clear, clearLabel); ToolTipService.SetToolTip(clear, clearLabel);
         AutomationProperties.SetName(archive, archiveLabel); ToolTipService.SetToolTip(archive, archiveLabel);
-        clear.IsEnabled = !busy && !store.ReadOnly && total > 0;
-        archive.IsEnabled = !busy && total > 0;
+        clear.IsEnabled = !busy && !store.ReadOnly && total > 0 && workspacePage == 0;
+        archive.IsEnabled = !busy && (total > 0 || Scene() != null);
         AutomationProperties.SetHelpText(clear, $"仅移除当前范围中的 {total} 项记录，不删除原文件");
         AutomationProperties.SetHelpText(archive, $"归档当前范围中的 {total} 项");
     }
     void Refresh()
     {
+        RefreshQuickLook();
         CancelPreviews(); previewCancellation = new CancellationTokenSource();
-        int version = ++renderVersion; cards.Children.Clear();
+        int version = ++renderVersion; cards.Children.Clear(); selectionCards.Clear(); selectionGrips.Clear();
         var now = DateTimeOffset.Now; renderedDay = now.LocalDateTime.Date;
+        RefreshWorkspaces();
         var matches = CurrentItems();
-        count.Text = Detached ? $"当前 {matches.Length} 项 / 共 {store.Items.Count} 项 · 上限 {store.Capacity} · 自动保存" : $"{store.Items.Count} / {store.Capacity} 项 · 自动保存";
+        stationTitle.Text = $"中转站 · {store.Items.Count}"; UpdateStationHeader();
         RefreshCategories(now); UpdateBrowserMode(); RefreshActionState();
         if (!Detached) viewAllAfterDrop.Visibility = Visibility.Collapsed;
+        PruneSelection(matches);
+        if (RenderWorkspacePage()) return;
         if (matches.Length == 0)
         {
+            if(RenderMissingWorkspaceItems()) return;
             var empty = PanelTheme.Card(new TextBlock {
-                Text = store.Items.Count == 0 ? "先放一下\n稍后接着用" : "没有匹配内容\n试试其他分类、时间或关键词", FontSize = 18, Opacity = .6, TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center });
+                Text = store.Items.Count == 0 ? "暂无资料" : "没有匹配内容", FontSize = 18, Opacity = .6, TextWrapping = TextWrapping.Wrap, TextAlignment = TextAlignment.Center });
             empty.Padding = new Thickness(22, 36, 22, 36); cards.Children.Add(empty);
             return;
         }
@@ -235,6 +244,7 @@ internal sealed partial class StationWindow : PanelWindow
             if (Detached && group != next) { cards.Children.Add(new TextBlock { Text = next, FontSize = 12, Opacity = .7, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Margin = new Thickness(2, 8, 0, 2) }); group = next; }
             AddCard(item, version);
         }
+        RenderMissingWorkspaceItems();
         if (matches.Length > visibleItems)
         {
             var more = new Button { Content = $"继续显示（还有 {matches.Length - visibleItems} 项）", HorizontalAlignment = HorizontalAlignment.Stretch };
@@ -246,7 +256,7 @@ internal sealed partial class StationWindow : PanelWindow
         var body = new Grid { ColumnSpacing = 10 };
         body.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) }); body.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
         string label = item.Kind switch { StationKind.File => "文件", StationKind.Folder => "文件夹", StationKind.Link => "链接", _ => "文字" };
-        var meta = Hint(label + " · 拖动取出");
+        var meta = Hint(label);
         var text = new TextBlock { Text = DisplayTitle(item), TextWrapping = TextWrapping.Wrap, MaxLines = 2, TextTrimming = TextTrimming.CharacterEllipsis, FontSize = 14, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold };
         var gripContent = new StackPanel { Spacing = 4, VerticalAlignment = VerticalAlignment.Center }; gripContent.Children.Add(text); gripContent.Children.Add(meta);
         var savedTime = Hint(StationQuery.TimeLabel(item.Created, DateTimeOffset.Now, TimeZoneInfo.Local));
@@ -256,14 +266,14 @@ internal sealed partial class StationWindow : PanelWindow
         var content = new Grid { ColumnSpacing = 10, MinHeight = 52 };
         content.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); content.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) });
         content.Children.Add(preview); Grid.SetColumn(gripContent, 1); content.Children.Add(gripContent);
-        var grip = new Border { Child = content, Background = new SolidColorBrush(Colors.Transparent), CanDrag = true, Padding = new Thickness(0, 2, 0, 2) };
+        var grip = new ContentControl { Content = content, IsTabStop=true, HorizontalContentAlignment=HorizontalAlignment.Stretch, Background = new SolidColorBrush(Colors.Transparent), CanDrag = true, Padding = new Thickness(0, 2, 0, 2) };
         AutomationProperties.SetName(grip, "拖出" + label + "：" + DisplayTitle(item)); ToolTipService.SetToolTip(grip, item.Value.Length > 800 ? item.Value[..800] + "…" : item.Value);
         IDisposable? dragLease = null;
         grip.DragStarting += async (_, e) =>
         {
             if (busy || ModalActive) { e.Cancel = true; return; }
             dragLease = KeepOpenForDrag(); var deferral = e.GetDeferral();
-            try { e.AllowedOperations = DataPackageOperation.Copy; await StationTransfer.Fill(e.Data, item); }
+            try { e.AllowedOperations = DataPackageOperation.Copy; await FillSelection(e.Data, item); }
             catch { e.Cancel = true; dragLease.Dispose(); dragLease = null; status.Text = "该文件暂不可用、已移动或已删除，请检查原位置。"; }
             finally { deferral.Complete(); }
         };
@@ -274,20 +284,14 @@ internal sealed partial class StationWindow : PanelWindow
             if (e.DropResult != DataPackageOperation.None && !Pinned && !Detached) Hide();
         };
         body.Children.Add(grip);
-        var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 5, VerticalAlignment = VerticalAlignment.Center };
-        var open = ItemAction("打开" + label, OpenPath);
-        open.Click += async (_, _) => await Run(() => OpenItem(item)); buttons.Children.Add(open);
-        var copy = ItemAction("复制内容", CopyPath);
-        copy.Click += async (_, _) => await Run(async () => { var package = new DataPackage(); await StationTransfer.Fill(package, item); Clipboard.SetContent(package); Clipboard.Flush(); status.Text = "已复制，可到目标窗口粘贴。"; });
-        buttons.Children.Add(copy);
-        var remove = ItemAction("移除记录", TrashPath); remove.IsEnabled = !store.ReadOnly;
-        remove.Click += async (_, _) => await Run(async () => { await store.Remove(item.Id); status.Text = "已移除记录，原文件未改动。"; }); buttons.Children.Add(remove);
+        var buttons = BuildItemActions(item, out var copy, out var open);
         Grid.SetColumn(buttons, 1); body.Children.Add(buttons);
         var card = PanelTheme.Card(body);
+        RegisterSelection(item, card, grip);
         cards.Children.Add(card);
         if (item.Kind is StationKind.File or StationKind.Folder) _ = LoadPreview(item, preview, card, meta, grip, copy, open, version, label, previewCancellation!.Token);
     }
-    static string DisplayTitle(StationItem item) => item.Kind is StationKind.File or StationKind.Folder
+    static string DisplayTitle(StationItem item) => item.Title.Length > 0 ? item.Title : item.Kind is StationKind.File or StationKind.Folder
         ? Path.GetFileName(item.Value) is { Length: > 0 } name ? name : item.Value
         : item.Kind == StationKind.Link && item.Title.Length > 0 ? item.Title : item.Value;
     async Task Run(Func<Task> action)
@@ -302,15 +306,19 @@ internal sealed partial class StationWindow : PanelWindow
     {
         var snapshot = CurrentItems();
         if (store.ReadOnly || snapshot.Length == 0) return;
-        var dialog = new ContentDialog { XamlRoot = root.XamlRoot, Title = ActiveQuery.Filtered ? "清空当前筛选结果？" : "清空中转站？",
+        var dialog = new ContentDialog { XamlRoot = root.XamlRoot, Title = workspaceId!=null ? "移出当前分组？" : ActiveQuery.Filtered ? "清空当前筛选结果？" : "清空中转站？",
             Content = $"将移除 {snapshot.Length} 项记录。范围：{ActiveQuery.Description}。\n不会删除原文件，其他记录保留。", PrimaryButtonText = "清空记录", CloseButtonText = "取消", DefaultButton = ContentDialogButton.Close };
-        if (await dialog.ShowAsync() == ContentDialogResult.Primary) { int removed = await store.RemoveArchived(snapshot); status.Text = $"已移除 {removed} 项记录，原文件未改动。"; }
+        if (await dialog.ShowAsync() == ContentDialogResult.Primary) { if (workspaceId is {} id) { await Remember("已移出分组",()=>App.Work.Store.UnlinkMany(id,snapshot.Select(i=>new WorkRef(WorkKind.Station,i.Id)))); status.Text="已移出当前分组，原记录保留"; } else { int removed=0;await Remember("已清空当前记录",async ()=>removed=await store.RemoveArchived(snapshot)); status.Text = $"已移除 {removed} 项记录，原文件未改动。"; } }
     });
     protected override void OnHiding()
     {
+        CloseQuickLook();
+        CloseSearch(false);
+        workspaceHoverVersion++;
+        undoToastTimer.Stop();undoToast.Visibility=Visibility.Collapsed;feedbackTimer.Stop();status.Text="";
         SaveFloatingLayout();
         if (Detached) SaveQuery(); else searchTimer.Stop(); dayTimer.Stop();
         leaveTimer.Stop(); openedForDrop = false; pin.IsChecked = false; renderVersion++; CancelPreviews();
-        cards.Children.Clear(); previewCache.Clear();
+        cards.Children.Clear(); previewCache.Clear(); ClearSelection();
     }
 }

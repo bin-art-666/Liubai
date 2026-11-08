@@ -8,7 +8,7 @@ using Windows.Graphics;
 
 namespace Liubai;
 
-internal sealed class QrResultWindow : PanelWindow
+internal sealed partial class QrResultWindow : PanelWindow
 {
     readonly StackPanel results = new() { Spacing = 16 };
     readonly TextBlock status = new() { TextWrapping = TextWrapping.Wrap };
@@ -36,11 +36,14 @@ internal sealed class QrResultWindow : PanelWindow
     }
     internal void Open(string[] values, DesktopMonitor monitor, int top, string? message = null)
     {
-        results.Children.Clear(); status.Text = message ?? (values.Length == 0 ? "没有识别到二维码，请将二维码完整框入后重试。" : values.Length > 1 ? "识别到多个二维码，请选择需要的结果。" : "已识别。可以复制内容或用 Edge 打开网址。");
+        results.Children.Clear(); status.Text = message ?? (values.Length == 0 ? "没有识别到二维码，请将二维码完整框入后重试。" : values.Length > 1 ? "识别到多个二维码，请选择需要的结果。" : "已识别，请查看内容类型与处理说明。");
         foreach (string value in values)
         {
             var card = new StackPanel { Spacing = 8 };
-            card.Children.Add(new TextBox { Text = value, IsReadOnly = true, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MaxHeight = 180 });
+            var route = QrRouting.Analyze(value);
+            card.Children.Add(new TextBlock { Text = route.Title, FontSize = 16, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
+            card.Children.Add(PanelTheme.Hint(route.Description));
+            card.Children.Add(new TextBox { AcceptsReturn = true, Text = route.DisplayText, IsReadOnly = true, TextWrapping = TextWrapping.Wrap, MaxHeight = 180 });
             var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
             var copy = new Button { Content = "复制内容" };
             copy.Click += (_, _) =>
@@ -49,7 +52,7 @@ internal sealed class QrResultWindow : PanelWindow
                 catch { status.Text = "复制失败，请重试"; }
             };
             buttons.Children.Add(copy);
-            if (QrDecoder.WebUri(value) is { } uri)
+            if (route.BrowserUri is { } uri)
             {
                 var open = new Button { Content = "用 Edge 打开" };
                 open.Click += async (_, _) =>

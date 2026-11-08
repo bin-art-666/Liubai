@@ -3,7 +3,8 @@ using Microsoft.UI.Dispatching;
 
 namespace Liubai;
 
-// Watches button-down events only while a panel is open. Never consumes or records input.
+// Active only while a panel is open. No input is recorded. An optional panel
+// handler may consume wheel input strictly within its own interaction region.
 internal sealed class OutsideClickWatcher : IDisposable
 {
     delegate IntPtr HookProcedure(int code, IntPtr message, IntPtr data);
@@ -11,10 +12,19 @@ internal sealed class OutsideClickWatcher : IDisposable
     IntPtr hook;
     bool disposed;
 
-    internal OutsideClickWatcher(IntPtr panel, DispatcherQueue dispatcher, Action dismiss)
+    internal OutsideClickWatcher(IntPtr panel, DispatcherQueue dispatcher, Action dismiss, Func<Native.Point,int,bool,bool>? wheel=null)
     {
         procedure = (code, message, data) =>
         {
+            if(code>=0&&wheel!=null&&message.ToInt64() is 0x020A or 0x020E)
+            {
+                var point=Marshal.PtrToStructure<Native.Point>(data);
+                if(Native.IsPanelWindow(panel,WindowFromPoint(point)))
+                {
+                    int delta=unchecked((short)(Marshal.ReadInt32(data,8)>>16));
+                    if(wheel(point,delta,message.ToInt64()==0x020E))return new IntPtr(1);
+                }
+            }
             if (code >= 0 && message.ToInt64() is 0x0201 or 0x0204 or 0x0207 or 0x020B)
             {
                 // POINT is the first member of MSLLHOOKSTRUCT; no other input data is needed.

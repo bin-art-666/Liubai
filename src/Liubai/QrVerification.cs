@@ -9,6 +9,23 @@ using ZXing;
 
 namespace Liubai;
 
+internal sealed partial class QrResultWindow
+{
+    internal async Task VerifyAuthorizationCard(DesktopMonitor display)
+    {
+        using var lease=KeepOpen();
+        const string value="https://open.weixin.qq.com/connect/confirm?uuid=local-verification-only";
+        Open([value],display,display.Info.Work.Top);
+        await Task.Delay(100);
+        var card=(StackPanel)((Border)results.Children.Single()).Child;
+        if(!card.Children.OfType<TextBlock>().Any(t=>t.Text=="微信登录授权"))throw new Exception("Missing WeChat authorization classification");
+        if(card.Children.OfType<TextBox>().Single().Text.Contains("local-verification-only"))throw new Exception("Authorization token displayed");
+        var buttons=card.Children.OfType<StackPanel>().Single();
+        if(buttons.Children.OfType<Button>().Any(b=>Equals(b.Content,"用 Edge 打开")))throw new Exception("WeChat authorization still has a browser action");
+        if(card.Children.OfType<TextBlock>().All(t=>!t.Text.Contains("尚未验证")))throw new Exception("Missing desktop authorization compatibility boundary");
+    }
+}
+
 public sealed partial class BarWindow
 {
     async Task VerifyQr()
@@ -37,6 +54,10 @@ public sealed partial class BarWindow
             Activate(); await Task.Delay(400);
             if (qrResults.IsOpen) throw new Exception("Results did not dismiss outside");
             checks.Add("Multiple-result card and outside dismissal");
+            if(await OpenQrLink(new Uri("https://open.weixin.qq.com/connect/confirm?uuid=local-verification-only")))throw new Exception("Authorization escaped browser launch boundary");
+            checks.Add("Direct browser launch boundary rejects WeChat authorization before invoking Edge");
+            await qrResults.VerifyAuthorizationCard(Display);qrResults.Hide();
+            checks.Add("WeChat authorization card hides ephemeral parameters, omits Edge action and describes unverified desktop authorization");
             if (Environment.GetCommandLineArgs().Contains("--interactive-qr"))
             {
                 fixture = new Window { Title = "留白 · 扫码测试图" };

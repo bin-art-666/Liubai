@@ -99,6 +99,13 @@ internal static class PanelTheme
     {
         var button = new Button { Content = Glyph(glyph, size) }; IconStyle(button, name); return button;
     }
+    // Framed actions share native keyboard, pointer and checked states.
+    internal static void FramedIconStyle(ButtonBase button, string name)
+    {
+        IconStyle(button,name);
+        button.Style=Style(button is ToggleButton ? "FramedToggle" : "ItemAction");
+        Track(button, static value => value.CornerRadius=new CornerRadius(Value<CornerRadius>("ControlRadius").TopLeft*1.5));
+    }
     internal static Border Card(UIElement content) => Track(new Border { Child = content, Style = Style("Card") }, static card =>
     { card.CornerRadius = Value<CornerRadius>("CardRadius"); card.Padding = Value<Thickness>("CardPadding"); if (card.Child != null) Controls(card.Child, new HashSet<DependencyObject>()); });
 }

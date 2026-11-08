@@ -104,4 +104,9 @@
         <Setter Property="BorderBrush" Value="{ThemeResource LiubaiActionBorderBrush}" />
         <Setter Property="Background" Value="{ThemeResource LiubaiActionBrush}" />
     </Style>
+    <Style x:Key="LiubaiFramedToggleStyle" TargetType="ToggleButton" BasedOn="{StaticResource LiubaiIconToggleStyle}">
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="BorderBrush" Value="{ThemeResource LiubaiActionBorderBrush}" />
+        <Setter Property="Background" Value="{ThemeResource LiubaiActionBrush}" />
+    </Style>
 </ResourceDictionary>

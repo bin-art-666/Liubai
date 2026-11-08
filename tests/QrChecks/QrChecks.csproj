@@ -2,6 +2,7 @@
   <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable></PropertyGroup>
   <ItemGroup>
     <Compile Include="../../src/Liubai/QrDecoder.cs" Link="QrDecoder.cs" />
+    <Compile Include="../../src/Liubai/QrRouting.cs" Link="QrRouting.cs" />
     <PackageReference Include="ZXing.Net" Version="0.16.11" />
   </ItemGroup>
 </Project>

@@ -36,12 +36,12 @@ public sealed partial class BarWindow
         if (!StationControls<Border>(root).Any(b => b.Background is LinearGradientBrush)) throw new Exception("Image-derived card tint missing");
         foreach (var open in StationControls<Button>(root).Where(b => AutomationProperties.GetName(b).StartsWith("打开", StringComparison.Ordinal)))
         {
-            if (open.Parent is not StackPanel buttons || buttons.Children.Count != 3) throw new Exception("Item actions not grouped");
+            if (open.Parent is not Grid buttons || buttons.Children.Count != 3) throw new Exception("Item actions not grouped");
             var names = buttons.Children.OfType<Button>().Select(AutomationProperties.GetName).ToArray();
-            if (names[1] != "复制内容" || names[2] != "移除记录") throw new Exception("Action order mismatch");
+            if (names[1] != "复制内容" || names[2] != "更多操作") throw new Exception("Action order mismatch");
             if (buttons.Children.OfType<Button>().Any(b => b.BorderThickness.Left != 1 || b.BorderBrush is not SolidColorBrush brush || brush.Color.R != 255 || brush.Color.G != 255 || brush.Color.B != 255)) throw new Exception("White action borders missing");
         }
-        checks.Add("Windows image thumbnail, image-derived card gradient, open/copy/trash order and white button borders");
+        checks.Add("Windows image thumbnail, image-derived card gradient, open/copy/more order and white button borders");
         if (StationWindow.ExtractColors([0, 0, 0, 0, 255, 255, 255, 255]) != null) throw new Exception("Transparent/white pixels produced tint");
         var colors = StationWindow.ExtractColors([180, 140, 30, 255, 110, 190, 230, 255]) ?? throw new Exception("Palette empty");
         foreach (bool dark in new[] { false, true })
@@ -61,7 +61,7 @@ public sealed partial class BarWindow
         string missingPath = Path.Combine(App.DataDirectory, "missing-preview-fixture.txt");
         await App.Station.Add([new StationInput(StationKind.File, missingPath)]);
         var missing = App.Station.Items.Single(i => i.Value == missingPath);
-        var missingGrip = StationControls<Border>(root).Single(b => AutomationProperties.GetName(b) == "拖出文件：missing-preview-fixture.txt");
+        var missingGrip = StationControls<ContentControl>(root).Single(b => AutomationProperties.GetName(b) == "拖出文件：missing-preview-fixture.txt");
         for (int i = 0; i < 50 && missingGrip.CanDrag; i++) await Task.Delay(150);
         if (missingGrip.CanDrag || missingGrip.Parent is not Grid row) throw new Exception("Missing file remained draggable");
         var missingButtons = StationControls<Button>(row).ToArray();
@@ -70,9 +70,14 @@ public sealed partial class BarWindow
         checks.Add("Live light/dark theme changes; missing files keep fallback icon and disable only open/copy/drag");
         int count = App.Station.Items.Count;
         var previewTask = stationWindow.OpenItem(App.Station.Items.First(i => i.Kind == StationKind.Text));
-        await Task.Delay(180);
-        var dialog = VisualTreeHelper.GetOpenPopupsForXamlRoot(((FrameworkElement)stationWindow.Content).XamlRoot)
-            .SelectMany(p => p.Child is { } child ? StationControls<ContentDialog>(child) : []).SingleOrDefault();
+        ContentDialog? dialog=null;long previewDeadline=Environment.TickCount64+3000;
+        do {
+            dialog=VisualTreeHelper.GetOpenPopupsForXamlRoot(((FrameworkElement)stationWindow.Content).XamlRoot)
+                .SelectMany(p=>p.Child is {} child?StationControls<ContentDialog>(child):[]).SingleOrDefault();
+            if(dialog!=null)break;
+            if(previewTask.IsCompleted){await previewTask;break;}
+            await Task.Delay(40);
+        } while(Environment.TickCount64<previewDeadline);
         if (dialog?.Title as string != "文字预览" || !stationWindow.ModalActive) throw new Exception("Text preview dialog missing");
         dialog.Hide(); await previewTask;
         if (App.Station.Items.Count != count) throw new Exception("Opening preview changed stored items");

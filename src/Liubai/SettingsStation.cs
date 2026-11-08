@@ -50,6 +50,7 @@ internal sealed partial class SettingsWindow
         stationRemoveArchived = new ToggleSwitch { Header = "归档成功后移出中转站", OnContent = "移出成功归档的记录", OffContent = "保留所有记录", IsEnabled = !App.Station.ReadOnly };
         AutomationProperties.SetName(stationRemoveArchived, "归档成功后移出中转站"); panel.Children.Add(stationRemoveArchived);
         panel.Children.Add(Hint("归档复制实际文件，文字保存为 TXT，链接保存为 URL。取消或失败的记录保留，原文件不删除。此分组独立于外观配置。"));
+        panel.Children.Add(BuildStationActions());
         stationCapacity.IsEnabled = !App.Station.ReadOnly;
         stationCapacity.ValueChanged += async (_, _) => { if (!stationSync && interactive && !syncing) await SaveStationSettings(); };
         stationRemoveArchived.Toggled += async (_, _) => { if (!stationSync && interactive && !syncing) await SaveStationSettings(); };

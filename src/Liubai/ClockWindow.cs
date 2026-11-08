@@ -16,6 +16,7 @@ internal sealed class ClockWindow : PanelWindow
     readonly ToggleButton alarmTab = new() { Content = "闹钟" }, timerTab = new() { Content = "计时" };
     readonly StackPanel alarmPage = new() { Spacing = 12 }, timerPage = new() { Spacing = 12 }, alarmList = new() { Spacing = 8 };
     readonly TextBlock status = Hint("添加闹钟或开始计时后自动保存"), warning = Hint(""), alarmPreview = Hint("");
+    readonly Button focusTask = new() { Content="返回关联任务",Visibility=Visibility.Collapsed,HorizontalAlignment=HorizontalAlignment.Center };
     readonly TextBlock remaining = new() { Text = "25:00", FontSize = 46, HorizontalAlignment = HorizontalAlignment.Center, FontFamily = new FontFamily("Segoe UI Variable Display") };
     readonly TextBlock timerDescription = Hint("");
     readonly CheckBox showRemaining = new() { Content = "在顶栏显示剩余时间" };
@@ -60,7 +61,7 @@ internal sealed class ClockWindow : PanelWindow
         Name(alarmTime, "闹钟时间"); Name(alarmTitle, "闹钟备注"); Name(timerTitle, "计时用途"); Name(start, "开始计时"); Name(pause, "暂停或继续计时"); Name(cancel, "取消计时");
         alarmPage.Children.Add(new TextBlock { Text = "在指定时间提醒你", FontSize = 22 }); alarmPage.Children.Add(alarmTime); alarmPage.Children.Add(alarmPreview);
         alarmPage.Children.Add(alarmTitle); alarmPage.Children.Add(addAlarm); alarmPage.Children.Add(alarmList);
-        timerPage.Children.Add(new TextBlock { Text = "留一点时间，专心做事", FontSize = 22 }); timerPage.Children.Add(remaining); timerPage.Children.Add(timerDescription);
+        timerPage.Children.Add(new TextBlock { Text = "留一点时间，专心做事", FontSize = 22 }); timerPage.Children.Add(remaining); timerPage.Children.Add(timerDescription); timerPage.Children.Add(focusTask); focusTask.Click+=(_,_)=> { if(App.WorkStore.Data.Focus is {} f) App.RequestFocus(f.TaskId,display.Device); };
         var presets = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
         foreach (int value in new[] { 5, 10, 25, 60 })
         {
@@ -166,6 +167,7 @@ internal sealed class ClockWindow : PanelWindow
                 _ => ClockPolicy.IsDue(item, now, zone) ? "已到时间，等待提醒" : item.SnoozeUntil is { } snooze
                     ? "稍后提醒 · " + ClockPolicy.When(TimeZoneInfo.ConvertTime(snooze, zone).DateTime, now, zone) : ClockPolicy.When(item.LocalAlarm!.Value, now, zone)
             };
+        focusTask.Visibility=App.WorkStore.Data.Focus is {} focus&&store.Data.Countdown?.Id==focus.ClockId ? Visibility.Visible : Visibility.Collapsed;
         bool active = ActiveCountdown; var current = store.Data.Countdown;
         if (current is null) loadedCountdown = null;
         else if (loadedCountdown != current.Id)

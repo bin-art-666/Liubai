@@ -55,9 +55,13 @@ public partial class App : Application
     static WorkStore? workStore;
     internal static WorkStore WorkStore => workStore ??= new(Path.Combine(DataDirectory, "workspaces.json"));
     internal static WorkHub Work => work ??= new(WorkStore, () => Planner, () => Station);
+    static readonly System.Runtime.CompilerServices.ConditionalWeakTable<StationStore,StationHistory> histories=new();
+    internal static StationHistory HistoryFor(StationStore source)=>histories.GetValue(source,s=>new(s,Work));
     internal static Task FlushWork() => work?.Flush() ?? workStore?.Flush() ?? Task.CompletedTask;
     internal static event Action<Guid, string>? FocusRequested;
     internal static void RequestFocus(Guid task, string display) => FocusRequested?.Invoke(task, display);
+    internal static event Action<Guid,string>? WorkspaceRequested;
+    internal static void RequestWorkspace(Guid group,string display)=>WorkspaceRequested?.Invoke(group,display);
     static ScreenshotOptionsStore? screenshots;
     internal static ScreenshotOptionsStore Screenshots => screenshots ??= new(Path.Combine(DataDirectory, "screenshot.json"));
     internal static ReminderService? Reminders { get; private set; }
@@ -99,7 +103,7 @@ public partial class App : Application
         PanelTheme.Apply(UiStyle.Data);
         if (index < 0 && !arguments.Any(a => a.StartsWith("--verify-", StringComparison.Ordinal))) StartupService.RefreshExistingPath();
         var preferences = new AppearanceStore(Path.Combine(DataDirectory, "appearance.json"));
-        if (arguments.Contains("--verify-tool-host") || arguments.Contains("--verify-updates") || arguments.Contains("--verify-updates-network") || arguments.Contains("--verify-modules") || arguments.Contains("--verify-toolbar-layout") || arguments.Contains("--verify-ui-style") || arguments.Contains("--verify-workflow") || arguments.Contains("--verify-station-browser") || arguments.Contains("--verify-station-size") || arguments.Contains("--verify-ai-panel") || arguments.Contains("--verify-privacy") || arguments.Contains("--verify-guard") || arguments.Contains("--verify-toolbar") || arguments.Contains("--verify-expanded") || arguments.Contains("--verify-shell") || arguments.Contains("--verify-planner") || arguments.Contains("--verify-reminders") || arguments.Contains("--verify-screenshot") || arguments.Contains("--verify-qr") || arguments.Contains("--verify-station") || arguments.Contains("--verify-clock"))
+        if (arguments.Contains("--verify-station-experience") || arguments.Contains("--verify-workbench") || arguments.Contains("--verify-tool-host") || arguments.Contains("--verify-updates") || arguments.Contains("--verify-updates-network") || arguments.Contains("--verify-modules") || arguments.Contains("--verify-toolbar-layout") || arguments.Contains("--verify-ui-style") || arguments.Contains("--verify-workflow") || arguments.Contains("--verify-station-browser") || arguments.Contains("--verify-station-size") || arguments.Contains("--verify-ai-panel") || arguments.Contains("--verify-privacy") || arguments.Contains("--verify-guard") || arguments.Contains("--verify-toolbar") || arguments.Contains("--verify-expanded") || arguments.Contains("--verify-shell") || arguments.Contains("--verify-planner") || arguments.Contains("--verify-reminders") || arguments.Contains("--verify-screenshot") || arguments.Contains("--verify-qr") || arguments.Contains("--verify-station") || arguments.Contains("--verify-clock"))
         {
             verificationBar = new BarWindow(preferences);
             verificationBar.Start(arguments.Contains("--show-settings"));

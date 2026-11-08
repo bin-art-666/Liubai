@@ -17,14 +17,16 @@ internal static class StationArchivePicker
 internal sealed partial class StationWindow
 {
     readonly Button archive = ItemAction("归档到文件夹", ArchivePath, header: true);
-    readonly Button cancelArchive = new() { Content = "取消归档", Visibility = Visibility.Collapsed };
+    readonly Button cancelArchive = CreateCancelArchive();
+    static Button CreateCancelArchive() {var button=IconButton("\uE8BB","取消归档");button.Visibility=Visibility.Collapsed;return button;}
     readonly ProgressBar archiveProgress = new() { Minimum = 0, Maximum = 100, Visibility = Visibility.Collapsed };
     CancellationTokenSource? archiveCancellation;
 
     internal async Task Archive()
     {
         if (busy || destroyed) return;
-        var snapshot = CurrentItems(); if (snapshot.Length == 0) return;
+        if (Scene() != null && selection.Count == 0) { await ArchiveWorkspace(); return; }
+        var snapshot = SelectionItems(); if (snapshot.Length == 0) return;
         string scope = ActiveQuery.Description; bool filtered = ActiveQuery.Filtered;
         busy = true; using var lease = KeepOpen();
         string? completedDirectory = null;
@@ -71,7 +73,7 @@ internal sealed partial class StationWindow
             bool canceled = result.Canceled || token.IsCancellationRequested;
             int removed = 0;
             if (!canceled && !destroyed && removeSaved)
-                removed = await store.RemoveArchived(result.Saved.Select(s => s.Item));
+                await Remember("归档后已移出记录",async ()=>removed=await store.RemoveArchived(result.Saved.Select(s => s.Item)));
             if (!destroyed)
                 status.Text = canceled ? $"已取消，原记录全部保留。未完成归档：{result.Directory}"
                     : $"已归档 {result.Saved.Length} 项，移出 {removed} 项" + (result.Failed.Length > 0 ? $"，失败 {result.Failed.Length} 项已保留。" : "。") + $"\n位置：{result.Directory}";

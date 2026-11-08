@@ -1,0 +1,93 @@
+using Liubai;
+using System.Text.Json;
+
+string root=Path.GetFullPath(Path.Combine(".build","workbench-checks-"+Guid.NewGuid().ToString("N"))); Directory.CreateDirectory(root);
+int checks=0;
+void Check(bool ok,string title) { if(!ok) throw new Exception(title); checks++; }
+async Task Reject(Func<Task> action) { try { await action(); } catch(Exception e) when(e is IOException or InvalidDataException or ArgumentException or InvalidOperationException) { checks++; return; } throw new Exception("Expected rejection"); }
+try
+{
+    string legacyPath=Path.Combine(root,"legacy-station.json");File.WriteAllText(legacyPath,"{\"Version\":1,\"Items\":[]}");var migrated=new StationStore(legacyPath);
+    Check(!migrated.ReadOnly&&JsonDocument.Parse(File.ReadAllText(legacyPath)).RootElement.GetProperty("Version").GetInt32()==1,"Legacy station stays untouched until a real edit");
+    await migrated.UpdateActions(new(Grid:true));Check(JsonDocument.Parse(File.ReadAllText(legacyPath)).RootElement.GetProperty("Version").GetInt32()==2&&JsonDocument.Parse(File.ReadAllText(legacyPath+".bak")).RootElement.GetProperty("Version").GetInt32()==1,"Legacy station migrates with original backup");
+    var station=new StationStore(Path.Combine(root,"station.json")); var planner=new PlannerStore(Path.Combine(root,"planner.json")); var work=new WorkStore(Path.Combine(root,"work.json"));
+    var hub=new WorkHub(work,()=>planner,()=>station); hub.Attach(station); hub.Attach(planner);
+    var group=await work.Create("论文修改"); await work.Describe(group,"检查摘要与参考文献",true);
+    string file=Path.Combine(root,"paper.txt"); await File.WriteAllTextAsync(file,"original paper");
+    string image=Path.Combine(root,"note-image.png"); await File.WriteAllTextAsync(image,"fixture image bytes");
+    await station.Add([new(StationKind.File,file),StationStore.Text("https://example.com/paper","参考"),StationStore.Text("下一次检查引用")]);
+    await hub.Flush(); Check(work.Data.Scenes.Single().Items.Length==3,"Automatic collection");
+    await planner.AddTask("修改摘要","补充研究目的",null); Guid task=planner.Data.Tasks.Single().Id;
+    Guid note=Guid.NewGuid(); await planner.SaveNote(note,"参考文献的格式需要统一"); await work.AddImage(note,image); await hub.Flush();
+    Check(work.Data.Scenes.Single().Items.Length==5,"Shared task/note references");
+    await work.SetFocus(new(task,Guid.NewGuid(),"修改摘要",DateTimeOffset.Now)); await work.FinishFocus(task,"下次检查第二段",180);
+    Check(!planner.Data.Tasks.Single().Completed&&work.Data.Focus==null&&work.Data.Sessions!.Single().Seconds==180,"Focus preserves task status");
+    await station.UpdateActions(new(Grid:true)); Check(new StationStore(Path.Combine(root,"station.json")).Actions.Visible(StationKind.File).Length==6,"Grid/restart");
+    await station.UpdateActions(new(Files:[StationAction.Folder,StationAction.Open,StationAction.Remove],Links:[],Text:[StationAction.Edit]));
+    Check(new StationStore(Path.Combine(root,"station.json")).Actions.Visible(StationKind.File).SequenceEqual(new[]{StationAction.Folder,StationAction.Open,StationAction.Remove}),"Custom action order/restart");
+    Check(station.Actions.Visible(StationKind.Link).Length==0,"Hide all common actions, retain more in UI");
+    await Reject(()=>station.UpdateActions(new(Files:[StationAction.Copy,StationAction.Copy])));
+    await Reject(()=>station.UpdateActions(new(Links:[StationAction.Folder])));
+    await Reject(()=>station.UpdateActions(new(Text:[StationAction.Open,StationAction.Copy,StationAction.Edit,StationAction.Remove])));
+    var text=station.Items.Single(i=>i.Kind==StationKind.Text); await station.Edit(text.Id,"已修改的文字",""); await hub.Flush();
+    Check(work.Data.Scenes.Single().Items.Length==5,"Editing doesn't create duplicate references");
+    await work.Link(group,[new(WorkKind.Station,text.Id)]); await work.Unlink(group,new(WorkKind.Station,text.Id));
+    Check(work.Data.Scenes.Single().Items.All(r=>r.Id!=text.Id)&&station.Items.Any(i=>i.Id==text.Id),"Unlink by identity preserves original");
+    await work.Link(group,[new(WorkKind.Station,text.Id)]);
+    await work.LinkTaskAssets(task,[station.Items.First(i=>i.Kind==StationKind.File).Id]);
+    string archived=await WorkArchive.Save(work.Data.Scenes.Single(),station,planner,work,Path.Combine(root,"archives"));
+    var package=await WorkArchive.Read(archived); Check(package.Items.Length==3&&package.Tasks.Length==1&&package.Notes.Length==1&&package.Sessions.Length==1&&package.Images.Length==1,"Complete group package");
+    Check(File.ReadAllText(file)=="original paper","Archive copies original");
+    var target=Path.Combine(root,"restored"); var dst=new StationStore(Path.Combine(target,"station.json")); var dp=new PlannerStore(Path.Combine(target,"planner.json")); var dw=new WorkStore(Path.Combine(target,"work.json"));
+    Guid restored=await WorkArchiveImport.Import(archived,package,dst,dp,dw);
+    Check(dw.Data.Active==restored&&dw.Data.Scenes.Single().Items.Length==5,"Roundtrip associations");
+    Check(dw.Data.TaskAssets!.Single().TaskId==dp.Data.Tasks.Single().Id && dw.Data.TaskAssets!.Single().StationIds.Single()==dst.Items.Single(i=>i.Kind==StationKind.File).Id,"Task materials survive roundtrip");
+    Check(dp.Data.Tasks.Single().Id!=task&&dp.Data.Notes.Single().Id!=note&&!dp.Data.Tasks.Single().Completed&&dp.Data.Tasks.Single().RemindBefore==null,"Remap identities without reminders");
+    Check(dw.Data.Resumes.Single().TaskId==dp.Data.Tasks.Single().Id&&dw.Data.Images.Single().NoteId==dp.Data.Notes.Single().Id,"Remap continuation and images");
+    Check(File.ReadAllText(dst.Items.Single(i=>i.Kind==StationKind.File).Value)=="original paper"&&File.Exists(dw.Data.Images.Single().Path),"Archive-independent managed files");
+    await WorkArchiveImport.Import(archived,package,dst,dp,dw); Check(dw.Data.Scenes.Length==2&&dw.Data.Scenes.Select(s=>s.Name).Distinct().Count()==2,"Repeated import preserves groups with unique names");
+    var full=new StationStore(Path.Combine(root,"full","station.json")); await full.UpdateOptions(1,"",false); await full.Add([StationStore.Text("keep")]);
+    await Reject(()=>WorkArchiveImport.Import(archived,package,full,dp,dw)); Check(full.Items.Single().Value=="keep"&&dw.Data.Scenes.Length==2,"Capacity failure rollback");
+    Check(!Directory.Exists(full.AttachmentDirectory)||!Directory.EnumerateDirectories(full.AttachmentDirectory,"import-*").Any(),"Failed import scratch cleanup");
+    string relative=package.Files.First().Path; string data=WorkArchive.Resolve(archived,relative); await File.AppendAllTextAsync(data,"tamper"); await Reject(()=>WorkArchive.Read(archived));
+    await Reject(()=>Task.Run(()=>WorkArchive.Resolve(archived,"../station.json")));
+    await Reject(()=>Task.Run(()=>WorkArchive.Resolve(archived,file)));
+    var folderSource=Path.Combine(root,"folder-source");Directory.CreateDirectory(Path.Combine(folderSource,"empty","nested"));
+    var fs=new StationStore(Path.Combine(root,"folder-test","station.json"));await fs.Add([new(StationKind.Folder,folderSource)]);
+    var fw=new WorkStore(Path.Combine(root,"folder-test","work.json"));Guid fg=await fw.Create("空文件夹");await fw.Link(fg,[new(WorkKind.Station,fs.Items.Single().Id)]);
+    string fa=await WorkArchive.Save(fw.Data.Scenes.Single(),fs,planner,fw,Path.Combine(root,"folder-archives"));var fp=await WorkArchive.Read(fa);
+    var fd=new StationStore(Path.Combine(root,"folder-target","station.json"));var fwd=new WorkStore(Path.Combine(root,"folder-target","work.json"));await WorkArchiveImport.Import(fa,fp,fd,dp,fwd);
+    Check(Directory.Exists(Path.Combine(fd.Items.Single().Value,"empty","nested")),"Empty nested directories survive roundtrip");
+    Guid removedId=station.Items.First(i=>i.Kind==StationKind.File).Id; await station.Remove(removedId); await hub.Flush();
+    Check(work.Data.Scenes.Single().Items.All(i=>i.Id!=removedId)&&(work.Data.TaskAssets??[]).All(l=>!l.StationIds.Contains(removedId)),"Global station removal clears group and task associations");
+    await station.Add([new(StationKind.File,file)]);await hub.Flush();
+    await work.Remove(group); Check(station.Items.Count==3&&planner.Data.Tasks.Length==1&&work.Data.Sessions!.Length==1,"Dissolve preserves data");
+    var history=new StationHistory(station,hub);var original=station.Items.First();
+    Guid undoGroup=await work.Create("撤销验证");await work.Link(undoGroup,[new(WorkKind.Station,original.Id)]);await work.LinkTaskAssets(task,[original.Id]);
+    await history.Execute("移除资料",()=>station.Remove(original.Id));Check(history.CanUndo&&!station.Items.Any(i=>i.Id==original.Id),"Removal creates inverse");
+    await planner.AddTask("后来新增的任务","新内容",null);await hub.Flush();Guid later=planner.Data.Tasks.Last().Id;
+    await history.Undo();Check(station.Items.Any(i=>i==original)&&work.Data.Scenes.Single(s=>s.Id==undoGroup).Items.Any(r=>r.Id==original.Id)&&work.Data.Scenes.Single(s=>s.Id==undoGroup).Items.Any(r=>r.Id==later),"Undo restores records and references without replacing later task");
+    Check(work.Data.TaskAssets!.Single(l=>l.TaskId==task).StationIds.Contains(original.Id),"Undo restores task materials");
+    await history.Execute("移出分组",()=>work.Unlink(undoGroup,new(WorkKind.Station,original.Id)));await history.Undo();Check(work.Data.Scenes.Single(s=>s.Id==undoGroup).Items.Any(r=>r.Id==original.Id),"Unlink undo");
+    await history.Execute("解散分组",()=>work.Remove(undoGroup));await history.Undo();Check(work.Data.Scenes.Any(s=>s.Id==undoGroup)&&work.Data.Active==undoGroup,"Dissolve undo restores identity and active group");
+    await history.Execute("加入资料",()=>work.Link(undoGroup,[new(WorkKind.Station,station.Items.Last().Id)]));if(history.CanUndo)await history.Undo();
+    var victim=station.Items.First();await history.Execute("移除",()=>station.Remove(victim.Id));await station.Add([new(victim.Kind,victim.Value,victim.Title)]);await hub.Flush();
+    await Reject(()=>history.Undo());Check(history.CanUndo&&station.Items.Any(i=>i.Value==victim.Value),"Undo conflict preserves newer duplicate and keeps undo available");
+    string largeText=Path.Combine(root,"large-text.txt");await File.WriteAllTextAsync(largeText,new string('汉',QuickLookPolicy.MaximumCharacters+100));var peek=await QuickLookPolicy.ReadText(largeText,CancellationToken.None);
+    Check(peek.Truncated&&peek.Text.Length==QuickLookPolicy.MaximumCharacters,"Preview is bounded");Check(QuickLookPolicy.TextFile("notes.MD")&&!QuickLookPolicy.TextFile("program.exe"),"Preview treats only explicit text formats as text");
+    using(var canceled=new CancellationTokenSource()){canceled.Cancel();bool stopped=false;try{await QuickLookPolicy.ReadText(largeText,canceled.Token);}catch(OperationCanceledException){stopped=true;}Check(stopped,"Preview cancellation");}
+    await planner.SaveNote(Guid.NewGuid(),"检索独有词\n正文里的目标短语");await hub.Flush();
+    Check(UnifiedSearch.Find("检索独有词",station.Items,planner.Data,work.Data).Any(h=>h.Kind==SearchKind.Note),"Unified note search");
+    Check(UnifiedSearch.Find("后来新增",station.Items,planner.Data,work.Data).Any(h=>h.Kind==SearchKind.Task),"Unified task search");
+    Check(UnifiedSearch.Find("撤销验证",station.Items,planner.Data,work.Data).Any(h=>h.Kind==SearchKind.Group),"Unified group search");
+    Check(UnifiedSearch.Find("目标短语",station.Items,planner.Data,work.Data).Single().Kind==SearchKind.Note,"Note body search");
+    Check(UnifiedSearch.Find(" ",station.Items,planner.Data,work.Data).Length==0&&UnifiedSearch.Find("目标短语 不存在",station.Items,planner.Data,work.Data).Length==0,"Empty and all-token matching");
+    var many=Enumerable.Range(0,130).Select(i=>new StationItem(Guid.NewGuid(),StationKind.Text,"bounded-result-"+i,"",DateTimeOffset.Now)).ToArray();
+    Check(UnifiedSearch.Find("bounded-result",many,PlannerDocument.Empty,WorkDocument.Empty).Length==100,"Search result limit");
+    var boundedHistory=new StationHistory(station,hub);var linked=Enumerable.Range(0,11).Select(_=>Guid.NewGuid()).ToArray();
+    foreach(var id in linked)await boundedHistory.Execute("加入分组",()=>work.Link(undoGroup,[new(WorkKind.Station,id)]));
+    for(int i=0;i<10;i++)await boundedHistory.Undo();
+    Check(!boundedHistory.CanUndo&&work.Data.Scenes.Single(s=>s.Id==undoGroup).Items.Any(r=>r.Id==linked[0])&&linked.Skip(1).All(id=>work.Data.Scenes.Single(s=>s.Id==undoGroup).Items.All(r=>r.Id!=id)),"Session history keeps ten inverse actions without reverting older work");
+    Console.WriteLine($"PASS: {checks} workbench layout, grouping, linked focus, archive/import and failure checks");
+}
+finally { Directory.Delete(root,true); }
