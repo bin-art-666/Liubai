@@ -15,7 +15,7 @@ internal abstract class PanelWindow : Window
     int dragDepth;
     OutsideClickWatcher? outsideClicks;
     PanelCaption? caption;
-    protected void InitializeFloatingCaption(FrameworkElement header, FrameworkElement controls, Func<bool> enabled) => caption = new(this, header, controls, enabled);
+    protected void InitializeFloatingCaption(FrameworkElement header, FrameworkElement controls, Func<bool> enabled, FrameworkElement? leading = null) => caption = new(this, header, controls, enabled, leading);
     protected void UpdateFloatingCaption() => caption?.Refresh();
     internal Task VerifyFloatingCaption(bool enabled) => caption?.Verify(enabled) ?? throw new InvalidOperationException("Caption not initialized");
     internal bool IsOpen { get; private set; }

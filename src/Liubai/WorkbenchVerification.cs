@@ -20,6 +20,8 @@ internal sealed partial class StationWindow
         foreach(var file in files.OfType<Windows.Storage.StorageFile>()) { using var stream=await file.OpenReadAsync();using var reader=new StreamReader(stream.AsStreamForRead());string payload=await reader.ReadToEndAsync();if(payload.Length==0)throw new Exception("Empty exported content"); }
         var internalItems=await StationTransfer.InternalItems(data.GetView(),store);if(internalItems?.Length!=2)throw new Exception("Private internal identity lost");
         checks.Add("Ctrl toggle, Shift range, selection toolbar, batch text-to-file export and internal identity");
+        pin.IsChecked=true;lease.Dispose();
+        checks.Add(VerifyBlankSelection());
         await store.UpdateActions(new(Grid:true));
         var grid=(Grid)BuildItemActions(new(Guid.NewGuid(),StationKind.File,Path.Combine(App.DataDirectory,"fixture.txt"),"",DateTimeOffset.Now),out _,out _);
         if(grid.Children.Count!=6||grid.RowDefinitions.Count!=2||grid.ColumnDefinitions.Count!=3)throw new Exception("Six-grid layout");
@@ -38,6 +40,9 @@ internal sealed partial class StationWindow
         workspacePage=0;ClearSelection();workspaceId=null;Refresh();
         lease.Dispose();pin.IsChecked=true;ToggleDetached();await Task.Delay(200);if(categories.Visibility!=Visibility.Visible)throw new Exception("Group sidebar hidden");
         if(!categories.Items.OfType<ListViewItem>().Any(i=>i.Tag is WorkspaceChoice {Id:not null}))throw new Exception("Group navigation missing");
+        checks.AddRange(VerifyExpandedToolbar());
+        checks.Add(VerifyBlankSelection());
+        await Task.Delay(200); // Let removed category rows finish Unloaded before beginning a new drag-hover.
         using(KeepOpenForDrag()) {await HoverWorkspace(group);if(workspaceId!=group)throw new Exception("Drag-hover group opening failed");}
         workspaceId=null;Refresh();checks.Add("Group hover opens while source drag remains protected");
         expandedQuery=new(Search:"第一个");CommitQuery();if(CurrentItems().Length!=1||selection.Count!=0)throw new Exception("Filtered selection scope");
@@ -47,7 +52,45 @@ internal sealed partial class StationWindow
         checks.Add("Dissolve preserves original station, task and note records");
         checks.AddRange(await VerifyWorkspaceLabels());
         checks.AddRange(await VerifyEntryDialogs());
+        checks.AddRange(await VerifyGroupQuickMenus());
         return checks.ToArray();
+    }
+    string VerifyBlankSelection()
+    {
+        var items = CurrentItems();
+        ClearSelection(); SelectItem(items[0].Id, false, false); SelectItem(items[1].Id, true, false);
+        var originalCards = cards.Children.ToArray(); var beforeQuery = expandedQuery; var beforeGroup = workspaceId;
+        double offset = browserScroll.VerticalOffset; int version = renderVersion;
+        var card = selectionCards[items[0].Id]; var grip = selectionGrips[items[0].Id];
+        if (TryClearSelectionFromBlank(card) || TryClearSelectionFromBlank(grip) || TryClearSelectionFromBlank(expand) || TryClearSelectionFromBlank(stationTitle)
+            || TryClearSelectionFromBlank(workspaceOverflow) || TryClearSelectionFromBlank(new Microsoft.UI.Xaml.Controls.Primitives.Thumb()) || selection.Count != 2)
+            throw new Exception("Interactive/card/header tap cleared selection");
+        using (KeepOpenForDrag()) if (TryClearSelectionFromBlank(cards)) throw new Exception("Drag cleared selection");
+        using (KeepOpen()) if (TryClearSelectionFromBlank(root)) throw new Exception("Modal operation cleared selection");
+        if (!TryClearSelectionFromBlank(cards) || selection.Count != 0 || selectionAnchor != null || selectionBar.Visibility != Visibility.Collapsed
+            || card.BorderThickness.Left == 2 || Detached && expandedActions.Values.Any(b => b.IsEnabled)) throw new Exception("Blank tap did not reset selection UI");
+        if (renderVersion != version || !cards.Children.SequenceEqual(originalCards) || expandedQuery != beforeQuery || workspaceId != beforeGroup || browserScroll.VerticalOffset != offset || !IsOpen)
+            throw new Exception("Blank tap rebuilt content or changed navigation/window state");
+        SelectItem(items[0].Id, false, false);
+        if (!TryClearSelectionFromBlank(root) || selection.Count != 0) throw new Exception("Panel background tap did not cancel single selection");
+        return (Detached ? "Expanded" : "Docked") + " blank taps clear single/multiple selection without reload; cards, controls, header, modal and drag preserve targets";
+    }
+    string[] VerifyExpandedToolbar()
+    {
+        if(createWorkspaceButton.Parent!=expandedCommands||importWorkspaceButton.Parent!=expandedCommands||expandedCommands.Children[0]!=timeFilterButton||expandedActionHost.Visibility!=Visibility.Visible||selectionBar.Visibility!=Visibility.Collapsed)throw new Exception("Expanded toolbar placement invalid");
+        if(browseTools.Children.OfType<TextBox>().Any()||periodFilter.Parent!=null)throw new Exception("Expanded search/time controls still occupy a row");
+        if(cards.Children.OfType<Border>().Select(c=>c.Child).OfType<Grid>().SelectMany(g=>g.Children.OfType<Grid>()).Any(g=>g.Visibility!=Visibility.Collapsed))throw new Exception("Expanded card repeats action buttons");
+        ClearSelection();if(expandedActions.Values.Any(b=>b.IsEnabled))throw new Exception("Empty selection actions enabled");
+        var items=CurrentItems();SelectItem(items[0].Id,false,false);SelectItem(items[1].Id,true,false);
+        if(expandedActions[StationAction.Open].IsEnabled||expandedActions[StationAction.Folder].IsEnabled||!expandedActions[StationAction.Copy].IsEnabled||!expandedActions[StationAction.Group].IsEnabled)throw new Exception("Multi selection action applicability invalid");
+        ClearSelection();var text=items.First(i=>i.Kind==StationKind.Text);SelectItem(text.Id,false,false);
+        if(!expandedActions[StationAction.Path].IsEnabled||expandedActions[StationAction.Folder].IsEnabled||!Microsoft.UI.Xaml.Automation.AutomationProperties.GetName(expandedActions[StationAction.Path]).Contains("编辑"))throw new Exception("Text edit/folder applicability invalid");
+        periodFilter.SelectedIndex=(int)StationPeriod.Today;
+        if(timeFilterBadge.Visibility!=Visibility.Visible||!Microsoft.UI.Xaml.Automation.AutomationProperties.GetName(timeFilterButton).Contains("今天"))throw new Exception("Active time filter badge missing");
+        periodFilter.SelectedIndex=0;ClearSelection();
+        if(expandedActionHost.Parent!=stationLeading||stationTitle.Text!="中转站"||stationDivider.Visibility!=Visibility.Visible||browseTools.Visibility!=Visibility.Collapsed)throw new Exception("Single-line header or contextual title invalid");
+        expandedQuery=expandedQuery with {Category=StationCategory.Images};UpdateStationHeader();if(stationTitle.Text!="中转站·图片")throw new Exception("Category title missing");expandedQuery=expandedQuery with {Category=StationCategory.All};UpdateStationHeader();
+        return ["Expanded header groups create/import/time actions; cards omit repeated buttons and filters occupy no extra search row", "Shared action toolbar handles empty/single/multi selection and text editing; time filter exposes active state"];
     }
     async Task<string[]> VerifyWorkspaceLabels()
     {
@@ -63,7 +106,7 @@ internal sealed partial class StationWindow
         }
         Bounds();
         UpdateStationHeader();
-        if(stationCommands.Visibility!=Visibility.Collapsed||stationCommandMore.Visibility!=Visibility.Visible||stationCommandMore.Flyout is not MenuFlyout {Items.Count:3})throw new Exception("Narrow header did not fold search/clear/archive");
+        if(stationCommands.Visibility!=Visibility.Collapsed||stationCommandMore.Visibility!=Visibility.Visible||stationCommandMore.Flyout is not MenuFlyout)throw new Exception("Narrow header did not fold search/clear/archive");
         Guid? selectedBefore=workspaceId;double offsetBefore=workspaceScroller.HorizontalOffset;
         var origin=new Native.Point();ClientToScreen(WinRT.Interop.WindowNative.GetWindowHandle(this),ref origin);
         var local=workspaceScroller.TransformToVisual((UIElement)Content).TransformPoint(new());double scale=root.XamlRoot.RasterizationScale;
@@ -93,7 +136,7 @@ internal sealed partial class StationWindow
         if(workspaceLabels.Children.OfType<Microsoft.UI.Xaml.Controls.Primitives.ToggleButton>().Any(b=>b.ContextFlyout is not MenuFlyout))throw new Exception("Group management context menu missing");
         ToggleDetached();await Task.Delay(180);
         if(workspaceId!=target)throw new Exception("Detachment lost selected group");
-        if(stationCommands.Visibility!=Visibility.Visible||workspaceTools.Visibility!=Visibility.Visible)throw new Exception("Wide header commands or group tools disappeared");
+        if(createWorkspaceButton.Parent!=expandedCommands||importWorkspaceButton.Parent!=expandedCommands||workspaceDrag.Parent!=stationLeading||workspacePageButton.Parent!=stationLeading||workspaceTabs.Visibility!=Visibility.Collapsed||stationTitle.Text!="中转站·"+Scene()!.Name)throw new Exception("Single-line group controls or group title missing");
         ToggleDetached();await Task.Delay(180);
         if(workspaceId!=target)throw new Exception("Docking lost selected group");
         await SelectWorkspace(new(null,"全部"));

@@ -16,7 +16,8 @@ internal sealed partial class StationWindow
         {
             var button = ActionIcon(action);
             if (action is StationAction.Remove or StationAction.Edit) button.IsEnabled = !store.ReadOnly;
-            button.Click += async (_, _) => await Run(() => ItemCommand(item, action));
+            if (action == StationAction.Group) AttachGroupButton(button, () => GroupItems(item));
+            else button.Click += async (_, _) => await Run(() => ItemCommand(item, action));
             return button;
         }
         var buttons = all.ToDictionary(a => a, Build); copy = buttons[StationAction.Copy]; open = buttons[StationAction.Open];
@@ -27,8 +28,9 @@ internal sealed partial class StationWindow
         var menu = new MenuFlyout();
         foreach (var action in all.Where(a => !shown.Contains(a)))
         {
+            if (action == StationAction.Group) { AddGroupSubmenu(menu, () => GroupItems(item)); continue; }
             var entry = new MenuFlyoutItem { Text = StationActions.Label(action), IsEnabled = !store.ReadOnly || action is not (StationAction.Edit or StationAction.Remove) };
-            entry.Click += async (_, _) => await Run(() => ItemCommand(item, action)); menu.Items.Add(entry);
+            entry.Click += async (_, _) => { activeGroupMenu?.Close(); await Run(() => ItemCommand(item, action)); }; menu.Items.Add(entry);
         }
         AddLocateAction(menu,item);
         if (!store.Actions.Grid)
@@ -76,11 +78,11 @@ internal sealed partial class StationWindow
     void AddLocateAction(MenuFlyout menu,StationItem item)
     {
         if(item.Kind is not (StationKind.File or StationKind.Folder)) return;
-        var locate=new MenuFlyoutItem {Text="重新定位原文件",IsEnabled=!store.ReadOnly}; locate.Click+=async (_,_)=>await Run(async ()=> {
+        var locate=new MenuFlyoutItem {Text="重新定位原文件",IsEnabled=!store.ReadOnly}; locate.Click+=async (_,_)=>{activeGroupMenu?.Close();await Run(async ()=> {
             string? path;
             if(item.Kind==StationKind.Folder) path=await StationArchivePicker.Pick(this);
             else {var picker=new Windows.Storage.Pickers.FileOpenPicker();picker.FileTypeFilter.Add("*");WinRT.Interop.InitializeWithWindow.Initialize(picker,WinRT.Interop.WindowNative.GetWindowHandle(this));path=(await picker.PickSingleFileAsync())?.Path;}
             if(path!=null) {await store.Relocate(item.Id,path);status.Text="原文件位置已更新，分组关联保留";}
-        }); menu.Items.Add(locate);
+        });}; menu.Items.Add(locate);
     }
 }

@@ -24,6 +24,7 @@ internal sealed partial class StationWindow
     readonly ComboBox workspaceTabs = new() { HorizontalAlignment = HorizontalAlignment.Stretch, Visibility = Visibility.Collapsed };
     readonly TextBlock workspaceSummary = Hint("");
     readonly StackPanel workspaceTools = new() { Orientation = Orientation.Horizontal, Spacing = 6 };
+    Button createWorkspaceButton=null!, importWorkspaceButton=null!;
     internal event Func<WorkRef, Task>? ItemRequested;
     sealed record WorkspaceChoice(Guid? Id, string Label, bool Ungrouped = false) { public override string ToString() => Label; }
     void InitializeGroupWheel(Grid shell)
@@ -54,8 +55,8 @@ internal sealed partial class StationWindow
         PanelTheme.Changed+=WorkspaceStyleChanged;
         foreach (string name in new[] { "资料", "待办", "笔记" }) workspaceTabs.Items.Add(name);
         workspaceTabs.SelectedIndex = 0;
-        var create = IconButton("\uE710","新建工作分组"); create.Click += async (_,_)=>await Run(CreateWorkspace); workspaceTools.Children.Add(create);
-        var import=IconButton("\uE8B5","导入分组归档"); import.Click+=async (_,_)=>await Run(ImportWorkspace); workspaceTools.Children.Add(import);
+        var create = createWorkspaceButton = IconButton("\uE710","新建工作分组"); create.Click += async (_,_)=>await Run(CreateWorkspace); workspaceTools.Children.Add(create);
+        var import=importWorkspaceButton=IconButton("\uE8B5","导入分组归档"); import.Click+=async (_,_)=>await Run(ImportWorkspace); workspaceTools.Children.Add(import);
         workspaceDrag=IconButton("\uE8DE","拖出整个分组的资料");workspaceDrag.CanDrag=true;workspaceDrag.Visibility=Visibility.Collapsed;workspaceTools.Children.Add(workspaceDrag);
         IDisposable? lease=null;
         workspaceDrag.DragStarting+=async (_,e)=> { var items=WorkspaceItems().ToArray(); if(busy||items.Length==0) { e.Cancel=true; return; } lease=KeepOpenForDrag(); var deferral=e.GetDeferral(); try { await StationTransfer.FillMany(e.Data,items,store.AttachmentDirectory); e.AllowedOperations=DataPackageOperation.Copy; } catch { e.Cancel=true; lease.Dispose();lease=null;status.Text="分组中有不可用文件，请检查原位置"; } finally { deferral.Complete(); } };
@@ -135,20 +136,12 @@ internal sealed partial class StationWindow
         if(App.WorkStore.Data.Scenes.Any(s=>s.Id!=except&&s.Name.Equals(name.Trim(),StringComparison.OrdinalIgnoreCase)))return "已有同名分组，请换一个名称";
         return null;
     }
-    async Task ChooseWorkspace(IReadOnlyList<StationItem> items)
+    Task ChooseWorkspace(IReadOnlyList<StationItem> items)
     {
-        var choices = new ComboBox { HorizontalAlignment = HorizontalAlignment.Stretch };
-        foreach (var scene in App.WorkStore.Data.Scenes) choices.Items.Add(new WorkspaceChoice(scene.Id,scene.Name));
-        if (choices.Items.Count > 0) choices.SelectedIndex = 0;
-        var name = new TextBox { PlaceholderText = "或输入新分组名称", MaxLength = 80 };
-        var dialog=new PanelEntryDialog(root.XamlRoot,$"将 {items.Count} 项加入分组","加入",name,[name],
-            ()=>string.IsNullOrWhiteSpace(name.Text)?(choices.SelectedItem==null?"请选择或创建分组":null):WorkspaceNameError(name.Text),
-            ()=>Remember($"已将 {items.Count} 项加入分组",async ()=> {
-                Guid? id = string.IsNullOrWhiteSpace(name.Text) ? (choices.SelectedItem as WorkspaceChoice)?.Id : await App.Work.Store.Create(name.Text,false);
-                if (id == null) throw new IOException("请选择或创建分组");
-                await App.Work.Store.Link(id,items.Select(i=>new WorkRef(WorkKind.Station,i.Id))); status.Text = $"已加入 {items.Count} 项，引用原内容";
-            }),choices);
-        await dialog.Show();
+        var menu=new MenuFlyout {MenuFlyoutPresenterStyle=GroupMenuStyle()};var session=new GroupMenuSession(this,menu);
+        menu.Opening+=(_,_)=>session.Populate(menu.Items,items.ToArray());
+        menu.ShowAt(Detached?expandedActions[StationAction.Group]:expand);
+        return Task.CompletedTask;
     }
     async Task<bool> ReceiveForWorkspace(DataPackageView view, Guid id)
     {

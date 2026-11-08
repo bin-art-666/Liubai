@@ -70,7 +70,7 @@ internal sealed partial class StationWindow
             || expand.Width != PanelTheme.Value<double>("ActionSize") || expand.Content is not Viewbox icon || icon.Width != PanelTheme.Value<double>("IconSize"))
             throw new Exception("Existing station panel did not update geometry/icons");
         var card = cards.Children.OfType<Border>().First();
-        if (card.CornerRadius.TopLeft != value.Roundness * 1.5 || card.Padding != PanelTheme.Value<Thickness>("CardPadding")) throw new Exception("Existing card did not update");
+        if (card.CornerRadius.TopLeft != value.Roundness * 1.5 || card.Padding != PanelTheme.Value<Thickness>("StationCardPadding")) throw new Exception("Existing card did not update");
     }
 }
 

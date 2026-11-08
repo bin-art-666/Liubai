@@ -11,15 +11,16 @@ internal sealed partial class StationWindow
     {
         var checks = new List<string>(); Open(display, display.Info.Work.Top);
         int total = store.Items.Count;
-        void Choose(StationCategory value) => categories.SelectedItem = categories.Items.OfType<ListViewItem>().Single(i => Equals(i.Tag, value));
+        async Task Choose(StationCategory value) { categories.SelectedItem = categories.Items.OfType<ListViewItem>().Single(i => Equals(i.Tag, value));for(int i=0;i<100&&busy;i++)await Task.Delay(20); }
         if (CurrentItems().Length != total || browseTools.Visibility != Visibility.Collapsed) throw new Exception("Docked view must start with all records");
         ToggleDetached(); await Task.Delay(150);
-        Choose(StationCategory.Images);
+        checks.AddRange(await VerifyGlobalCategoryNavigation(Choose));
+        await Choose(StationCategory.Images);
         if (CurrentItems().Length != 1 || CurrentItems()[0].Kind != StationKind.File || expandedQuery.Category != StationCategory.Images) throw new Exception("Image category selection failed");
         if (categories.SelectedItem is not ListViewItem { Tag: StationCategory.Images }) throw new Exception("Sidebar selection not retained after count refresh");
-        Choose(StationCategory.Files); if (CurrentItems().Length != 1) throw new Exception("Images leaked into files");
+        await Choose(StationCategory.Files); if (CurrentItems().Length != 1) throw new Exception("Images leaked into files");
         checks.Add("Expanded sidebar selections filter images separately from files and retain selected category");
-        Choose(StationCategory.Text); periodFilter.SelectedIndex = (int)StationPeriod.Today; search.Text = "备忘"; await Task.Delay(350);
+        await Choose(StationCategory.Text); periodFilter.SelectedIndex = (int)StationPeriod.Today; expandedQuery=expandedQuery with {Search="备忘"}; CommitQuery(); await Task.Delay(350);
         if (CurrentItems().Length != 1 || !Microsoft.UI.Xaml.Automation.AutomationProperties.GetName(clear).Contains("1") || !Microsoft.UI.Xaml.Automation.AutomationProperties.GetName(archive).Contains("1")) throw new Exception("Combined query or scope labels invalid");
         var clearPending = Clear(); await Task.Delay(150);
         ContentDialog Dialog() => VisualTreeHelper.GetOpenPopupsForXamlRoot(root.XamlRoot).SelectMany(p => p.Child is { } child ? FindDialogs(child) : []).Single();
@@ -34,13 +35,13 @@ internal sealed partial class StationWindow
         dialog.Hide(); await archivePending;
         if (Directory.Exists(directory) || store.Items.Count != total) throw new Exception("Canceled archive wrote or removed records");
         checks.Add("Search and local time combine with category; clear/archive show filtered counts; canceled confirmations leave items and files untouched");
-        search.Text = ""; periodFilter.SelectedIndex = 0; Choose(StationCategory.Images); await Task.Delay(300);
+        expandedQuery=expandedQuery with {Search=""}; periodFilter.SelectedIndex = 0; await Choose(StationCategory.Images); await Task.Delay(300);
         var package = new DataPackage(); package.SetText("筛选外拖入的文字");
         if (!await Receive(package.GetView()) || store.Items.Count != total + 1 || CurrentItems().Length != 1 || viewAllAfterDrop.Visibility != Visibility.Visible) throw new Exception("Hidden-type incoming drop was not retained or acknowledged");
-        ShowAllItems(); if (CurrentItems().Length != total + 1 || ActiveQuery.Filtered) throw new Exception("View-all action failed");
+        await ShowAllItems(); if (CurrentItems().Length != total + 1 || ActiveQuery.Filtered) throw new Exception("View-all action failed");
         checks.Add("Drop outside selected category is saved, acknowledged and revealed by View all");
-        Choose(StationCategory.Links); periodFilter.SelectedIndex = (int)StationPeriod.Last7Days;
-        search.Text = "项目"; await Task.Delay(300); var selected = expandedQuery;
+        await Choose(StationCategory.Links); periodFilter.SelectedIndex = (int)StationPeriod.Last7Days;
+        expandedQuery=expandedQuery with {Search="项目"}; CommitQuery(); await Task.Delay(300); var selected = expandedQuery;
         if (CurrentItems().Length != 1) throw new Exception("Link title/date search failed");
         ToggleDetached();
         if (CurrentItems().Length != total + 1 || browseTools.Visibility != Visibility.Collapsed) throw new Exception("Docking retained hidden filters");
@@ -53,6 +54,31 @@ internal sealed partial class StationWindow
         if (browserBody.ActualWidth >= 600 && categories.Visibility != Visibility.Visible) throw new Exception("Wide mode missing category sidebar");
         checks.Add("Docked view shows all; expanded query survives docking/restart; narrow and wide layouts adapt");
         return checks.ToArray();
+    }
+    async Task<string[]> VerifyGlobalCategoryNavigation(Func<StationCategory,Task> choose)
+    {
+        Guid group=await App.WorkStore.Create("分类范围回归",false);
+        await App.WorkStore.Link(group,[new(WorkKind.Station,store.Items.Single(i=>StationQuery.Classify(i)==StationCategory.Files).Id)]);
+        void Enter(bool loose=false,int page=0){workspaceId=loose?null:group;ungrouped=loose;workspacePage=page;expandedQuery=new();Refresh();}
+        void Global(StationCategory category,int count)
+        {
+            if(workspaceId!=null||ungrouped||workspacePage!=0||CurrentItems().Length!=count||App.WorkStore.Data.Active!=null
+                ||categories.SelectedItem is not ListViewItem {Tag:StationCategory selected}||selected!=category
+                ||workspacePageButton.Visibility!=Visibility.Collapsed||workspaceDrag.Visibility!=Visibility.Collapsed)
+                throw new Exception("Category did not leave group/ungrouped/page scope: "+category);
+            string title=category==StationCategory.All?"中转站":"中转站·"+StationQuery.CategoryNames[(int)category];
+            if(stationTitle.Text!=title||Microsoft.UI.Xaml.Automation.AutomationProperties.GetName(clear).Contains("分组"))throw new Exception("Category title or destructive action retains group scope");
+        }
+        Enter();await choose(StationCategory.All);Global(StationCategory.All,store.Items.Count);
+        Enter();await choose(StationCategory.Images);Global(StationCategory.Images,1);
+        Enter(true);await choose(StationCategory.Files);Global(StationCategory.Files,1);
+        Enter(page:1);await choose(StationCategory.All);Global(StationCategory.All,store.Items.Count);
+        Enter();if(compactCategory.SelectedItem!=null)throw new Exception("Narrow group view preselects global All and prevents returning");
+        compactCategory.SelectedItem=compactCategory.Items.Cast<CategoryChoice>().Single(c=>c.Value==StationCategory.All);
+        for(int i=0;i<100&&busy;i++)await Task.Delay(20);Global(StationCategory.All,store.Items.Count);
+        if(App.WorkStore.Data.Scenes.Single(s=>s.Id==group).Items.Length!=1)throw new Exception("Navigation changed group membership");
+        await App.WorkStore.Remove(group);
+        return ["Group to All/Images, ungrouped to Files and task page to All restore global scope, titles and action ranges", "Compact category All remains selectable from groups; navigation preserves original associations"];
     }
     static IEnumerable<ContentDialog> FindDialogs(DependencyObject parent)
     {

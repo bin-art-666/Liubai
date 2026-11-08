@@ -23,6 +23,13 @@ internal sealed partial class StationWindow
             Grid.SetRow(embeddedSearch,1);Grid.SetRowSpan(embeddedSearch,3);root.Children.Add(embeddedSearch);
         }
         foreach(var child in root.Children.OfType<FrameworkElement>().Where(e=>e!=stationHeader&&e!=embeddedSearch))child.Visibility=Visibility.Collapsed;
+        var scopeItems=CurrentItems().Select(i=>i.Id).ToHashSet();
+        var scene=Scene();var refs=scene?.Items.Select(i=>(i.Kind,i.Id)).ToHashSet();
+        embeddedSearch.ConfigureScope(Detached,hit=>hit.Kind switch {
+            SearchKind.Item=>scopeItems.Contains(hit.Id),
+            SearchKind.Group=>scene?.Id==hit.Id,
+            SearchKind.Task=>refs?.Contains((WorkKind.Task,hit.Id))==true,
+            SearchKind.Note=>refs?.Contains((WorkKind.Note,hit.Id))==true,_=>false});
         embeddedSearch.Visibility=Visibility.Visible;root.AllowDrop=false;embeddedSearch.Open();UpdateStationHeader();UpdateFloatingCaption();
     }
     internal void CloseSearch(bool restore=true)
@@ -37,7 +44,7 @@ internal sealed partial class StationWindow
     {
         revealWorkspaceLabel=true;
         workspaceId=null;ungrouped=false;workspacePage=0;expandedQuery=new();
-        querySync=true;search.Text="";periodFilter.SelectedIndex=0;querySync=false;
+        querySync=true;periodFilter.SelectedIndex=0;querySync=false;
         var items=CurrentItems();int index=Array.FindIndex(items,i=>i.Id==id);if(index<0)return;
         visibleItems=Math.Max(50,((index/50)+1)*50);ClearSelection();Refresh();SelectItem(id,false,false);
         DispatcherQueue.TryEnqueue(()=>{if(IsOpen&&selectionCards.TryGetValue(id,out var card)){card.StartBringIntoView(new Microsoft.UI.Xaml.BringIntoViewOptions {AnimationDesired=false});if(selectionGrips.TryGetValue(id,out var grip))grip.Focus(Microsoft.UI.Xaml.FocusState.Programmatic);}});

@@ -18,7 +18,7 @@ internal sealed partial class AiWindow : PanelWindow
     readonly Grid root = PanelTheme.Layout();
     readonly Grid browsers = new();
     readonly TextBlock status = new() { FontSize = 12, Opacity = .7, TextWrapping = TextWrapping.Wrap };
-    readonly ComboBox provider = new() { HorizontalAlignment = HorizontalAlignment.Stretch };
+    readonly List<Choice> providerChoices = [];
     readonly Button expand = Icon("\uE740", "展开为独立窗口");
     readonly ToggleButton pin = new();
     readonly Button back = Icon("\uE72B", "返回 AI 对话");
@@ -27,7 +27,7 @@ internal sealed partial class AiWindow : PanelWindow
     readonly Microsoft.UI.Dispatching.DispatcherQueueTimer saveTimer;
     DesktopMonitor display;
     int dockTop;
-    bool destroyed, syncing;
+    bool destroyed;
     string fixtureNavigation = "";
     Page? current;
     Popup? popup;
@@ -67,19 +67,21 @@ internal sealed partial class AiWindow : PanelWindow
         root.RowDefinitions.Add(new() { Height = new GridLength(1, GridUnitType.Star) }); root.RowDefinitions.Add(new() { Height = GridLength.Auto });
         var grip = new Border { Background = new SolidColorBrush(Colors.Transparent), Child = PanelTheme.Title("AI 助手") };
         var controls = PanelTheme.Actions();
-        Style(pin, "固定 AI 面板"); pin.Content = Glyph("\uE718");
+        Style(pin, "固定 AI 面板"); StationWindow.SetStationIcon(pin,"\uE718");
         var close = Icon("\uE8BB", "收起 AI 面板");
         expand.Click += (_, _) => ToggleDetached(); close.Click += (_, _) => Hide();
         pin.Click += (_, _) => { try { options.Save(options.Data with { Pinned = pin.IsChecked == true }); } catch { ApplyPin(); SetStatus("固定状态保存失败，请重试。"); } };
         controls.Children.Add(expand); controls.Children.Add(pin); controls.Children.Add(close);
-        var header = PanelTheme.Header(grip, controls); root.Children.Add(header);
-        InitializeFloatingCaption(header, controls, () => Detached);
-        var navigation = new Grid { ColumnSpacing = 8 };
+        var windowActions=PanelTheme.Actions();windowActions.Children.Add(aiHeaderDivider);windowActions.Children.Add(controls);
+        var header = aiHeader = PanelTheme.Header(grip, windowActions); root.Children.Add(header);
+        header.ColumnDefinitions.Add(new(){Width=GridLength.Auto});Grid.SetColumn(windowActions,2);
+        InitializeFloatingCaption(header, windowActions, () => Detached,aiNavigation);
+        var navigation = aiNavigation;
         navigation.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); navigation.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) });
         back.Visibility = Visibility.Collapsed; back.Click += (_, _) => ClosePopup(); navigation.Children.Add(back);
-        AutomationProperties.SetName(provider, "AI 面板服务"); Grid.SetColumn(provider, 1); navigation.Children.Add(provider);
-        provider.SelectionChanged += (_, _) => { if (!syncing && provider.SelectedItem is Choice choice) try { options.Save(options.Data with { Provider = choice.Id }); } catch { SetStatus("AI 服务保存失败，请重试。"); } };
+        InitializeProviderStrip(); Grid.SetColumn(providerHost, 1); navigation.Children.Add(providerHost);
         Grid.SetRow(navigation, 1); root.Children.Add(navigation);
+        InitializeAiHeaderLayout();
         var browserHost = new Grid(); browserHost.Children.Add(browsers); InitializeDropInbox(browserHost);
         var content = new Border { CornerRadius = PanelTheme.Value<CornerRadius>("CardRadius"), Child = dropContent, Background = new SolidColorBrush(Colors.Transparent) };
         PanelTheme.Track(content, static border => border.CornerRadius = PanelTheme.Value<CornerRadius>("CardRadius"));
@@ -95,8 +97,8 @@ internal sealed partial class AiWindow : PanelWindow
         InitializePanel(shell); ApplyOptions();
     }
     static FontIcon Glyph(string value) => PanelTheme.Glyph(value);
-    static void Style(ButtonBase button, string name) => PanelTheme.IconStyle(button, name);
-    static Button Icon(string value, string name) { var button = new Button { Content = Glyph(value) }; Style(button, name); return button; }
+    static void Style(ButtonBase button, string name) => PanelTheme.FramedIconStyle(button, name);
+    static Button Icon(string value, string name) => StationWindow.IconButton(value,name);
     void SetStatus(string text) { if (!destroyed) { status.Text = text; changed(); } }
     void PageStatus(Page page, string text, bool retry = false)
     {
@@ -114,24 +116,20 @@ internal sealed partial class AiWindow : PanelWindow
         if (!dockResizing) { dockWidth = options.Data.DockWidth; dockHeight = options.Data.DockHeight; dockOffset = options.Data.DockTopOffset; }
         foreach (var grip in new[] { dockGrip, dockTopGrip, dockBottomGrip }) grip.IsEnabled = !options.ReadOnly;
         if (IsOpen && !Detached && !dockResizing) Position();
-        syncing = true;
-        try
         {
-            provider.Items.Clear();
+            providerChoices.Clear();
             foreach (string id in AiPolicy.Providers)
             {
                 if (id == "custom" && options.Data.CustomUrl.Length == 0) continue;
-                try { provider.Items.Add(new Choice(id, AiPolicy.Resolve(options.Data with { Provider = id }).Name)); } catch (InvalidDataException) { }
+                try { providerChoices.Add(new Choice(id, AiPolicy.Resolve(options.Data with { Provider = id }).Name)); } catch (InvalidDataException) { }
             }
-            provider.SelectedItem = provider.Items.OfType<Choice>().FirstOrDefault(c => c.Id == options.Data.Provider);
-            provider.IsEnabled = !options.ReadOnly && popup == null; pin.IsEnabled = !options.ReadOnly; ApplyPin();
+            RenderProviderStrip(); RefreshProviderEnabled(); pin.IsEnabled = !options.ReadOnly; ApplyPin();
         }
-        finally { syncing = false; }
         if (IsOpen) _ = ShowSelected();
     }
     void ApplyPin()
     {
-        pin.IsChecked = options.Data.Pinned; pin.Content = Glyph(options.Data.Pinned ? "\uE77A" : "\uE718");
+        pin.IsChecked = options.Data.Pinned; StationWindow.SetStationIcon(pin,options.Data.Pinned ? "\uE77A" : "\uE718");
         ToolTipService.SetToolTip(pin, options.Data.Pinned ? "取消固定" : "固定 AI 面板");
         ((OverlappedPresenter)AppWindow.Presenter).IsAlwaysOnTop = !Detached || options.Data.Pinned;
     }
@@ -190,7 +188,7 @@ internal sealed partial class AiWindow : PanelWindow
             try
             {
                 target = new WebView2 { DefaultBackgroundColor = Colors.Transparent }; browsers.Children.Add(target);
-                popup = new(page, target); back.Visibility = Visibility.Visible; provider.IsEnabled = false; page.View.Visibility = Visibility.Collapsed;
+                popup = new(page, target); back.Visibility = Visibility.Visible; RefreshProviderEnabled(); page.View.Visibility = Visibility.Collapsed;
                 await target.EnsureCoreWebView2Async(page.Environment);
                 if (destroyed || popup?.View != target) return;
                 Configure(target, page); args.NewWindow = target.CoreWebView2;
@@ -218,7 +216,7 @@ internal sealed partial class AiWindow : PanelWindow
     void ClosePopup()
     {
         if (popup is not { } value) return;
-        popup = null; browsers.Children.Remove(value.View); value.View.Close(); back.Visibility = Visibility.Collapsed; provider.IsEnabled = !options.ReadOnly;
+        popup = null; browsers.Children.Remove(value.View); value.View.Close(); back.Visibility = Visibility.Collapsed; RefreshProviderEnabled();
         if (current == value.Owner) current.View.Visibility = Visibility.Visible;
     }
     void Remove(Page page) { pages.Remove(page.Endpoint.Key); browsers.Children.Remove(page.View); page.View.Close(); }
@@ -238,7 +236,8 @@ internal sealed partial class AiWindow : PanelWindow
         var presenter = (OverlappedPresenter)AppWindow.Presenter;
         presenter.SetBorderAndTitleBar(Detached, false); presenter.IsResizable = Detached; AppWindow.IsShownInSwitchers = Detached;
         if (Detached) { Native.RestoreResizeFrame(WinRT.Interop.WindowNative.GetWindowHandle(this)); ClampFloating(); } else Position();
-        expand.Content = Glyph(Detached ? "\uE73F" : "\uE740");
+        StationWindow.SetStationIcon(expand,Detached ? "\uE73F" : "\uE740");
+        UpdateAiHeaderLayout();
         string name = Detached ? "停靠回顶栏" : "展开为独立窗口"; AutomationProperties.SetName(expand, name); ToolTipService.SetToolTip(expand, name);
         ApplyPin(); ShowPanel(); UpdateFloatingCaption();
     }

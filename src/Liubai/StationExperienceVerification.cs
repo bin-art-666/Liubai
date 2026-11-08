@@ -59,7 +59,11 @@ internal sealed partial class UnifiedSearchView
         if(hits.Select(h=>h.Kind).Distinct().Count()!=4)throw new Exception("Unified categories missing");
         var note=App.Planner.Data.Notes.Single();await App.Planner.DeleteNote(note.Id);await Until(()=>results.IsEnabled&&results.Items.Count==3);
         if(results.Items.Cast<ListViewItem>().Any(i=>((SearchHit)i.Tag).Id==note.Id))throw new Exception("Deleted note remained in results");
-        return ["Native unified search includes station, group, task and note results","Search refreshes after deletion without stale result activation"];
+        var allowed=((SearchHit)results.Items.Cast<ListViewItem>().First().Tag).Id;
+        ConfigureScope(true,hit=>hit.Id==allowed);Schedule();await Until(()=>results.IsEnabled&&results.Items.Count==1);
+        if(((SearchHit)((ListViewItem)results.Items[0]).Tag).Id!=allowed)throw new Exception("Current scope escaped allowed records");
+        scope.SelectedIndex=1;await Until(()=>results.IsEnabled&&results.Items.Count==3);
+        return ["Native unified search includes station, group, task and note results","Search refreshes after deletion without stale result activation", "Current scope filters search results; switching to all restores all matching content"];
     }
     internal bool VerifyReleased()=>results.Items.Count==0&&!subscribed&&cancellation==null;
 }

@@ -14,7 +14,7 @@ namespace Liubai;
 internal sealed partial class StationWindow : PanelWindow
 {
     readonly StationStore store;
-    readonly StackPanel cards = new() { Spacing = 9, Margin = new Thickness(0, 0, 14, 0) };
+    readonly StackPanel cards = PanelTheme.Track(new StackPanel { Margin = new Thickness(0, 0, 14, 0) }, static panel => panel.Spacing = Math.Round(PanelTheme.Value<Thickness>("CardPadding").Top / 2));
     readonly TextBlock stationTitle = PanelTheme.Title("中转站");
     readonly TextBlock status = Hint("");
     readonly ToggleButton pin = new();
@@ -204,6 +204,7 @@ internal sealed partial class StationWindow : PanelWindow
     }
     void RefreshActionState()
     {
+        UpdateExpandedActions();
         int total = CurrentItems().Length;
         string clearLabel = ActiveQuery.Filtered ? $"清空当前结果（{total} 项）" : "清空中转站";
         string archiveLabel = ActiveQuery.Filtered ? $"归档当前结果（{total} 项）" : "归档到文件夹";
@@ -256,17 +257,17 @@ internal sealed partial class StationWindow : PanelWindow
         var body = new Grid { ColumnSpacing = 10 };
         body.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) }); body.ColumnDefinitions.Add(new() { Width = GridLength.Auto });
         string label = item.Kind switch { StationKind.File => "文件", StationKind.Folder => "文件夹", StationKind.Link => "链接", _ => "文字" };
-        var meta = Hint(label);
         var text = new TextBlock { Text = DisplayTitle(item), TextWrapping = TextWrapping.Wrap, MaxLines = 2, TextTrimming = TextTrimming.CharacterEllipsis, FontSize = 14, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold };
-        var gripContent = new StackPanel { Spacing = 4, VerticalAlignment = VerticalAlignment.Center }; gripContent.Children.Add(text); gripContent.Children.Add(meta);
-        var savedTime = Hint(StationQuery.TimeLabel(item.Created, DateTimeOffset.Now, TimeZoneInfo.Local));
-        ToolTipService.SetToolTip(savedTime, "存入时间：" + item.Created.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss zzz")); gripContent.Children.Add(savedTime);
-        if (item.Kind == StationKind.Link) gripContent.Children.Add(Hint(new Uri(item.Value).IdnHost));
+        ToolTipService.SetToolTip(text, DisplayTitle(item));
+        string detail = (item.Kind == StationKind.Link ? new Uri(item.Value).IdnHost + " · " : "") + StationQuery.TimeLabel(item.Created, DateTimeOffset.Now, TimeZoneInfo.Local);
+        var meta = Hint(detail); meta.MaxLines = 1; meta.TextWrapping = TextWrapping.NoWrap; meta.TextTrimming = TextTrimming.CharacterEllipsis;
+        ToolTipService.SetToolTip(meta, "存入时间：" + item.Created.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss zzz"));
+        var gripContent = new StackPanel { Spacing = 3, VerticalAlignment = VerticalAlignment.Center }; gripContent.Children.Add(text); gripContent.Children.Add(meta);
         var preview = CreatePreview(item);
-        var content = new Grid { ColumnSpacing = 10, MinHeight = 52 };
+        var content = new Grid { ColumnSpacing = 10, MinHeight = 48 };
         content.ColumnDefinitions.Add(new() { Width = GridLength.Auto }); content.ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) });
         content.Children.Add(preview); Grid.SetColumn(gripContent, 1); content.Children.Add(gripContent);
-        var grip = new ContentControl { Content = content, IsTabStop=true, HorizontalContentAlignment=HorizontalAlignment.Stretch, Background = new SolidColorBrush(Colors.Transparent), CanDrag = true, Padding = new Thickness(0, 2, 0, 2) };
+        var grip = new ContentControl { Content = content, IsTabStop=true, HorizontalContentAlignment=HorizontalAlignment.Stretch, Background = new SolidColorBrush(Colors.Transparent), CanDrag = true, Padding = new Thickness(0) };
         AutomationProperties.SetName(grip, "拖出" + label + "：" + DisplayTitle(item)); ToolTipService.SetToolTip(grip, item.Value.Length > 800 ? item.Value[..800] + "…" : item.Value);
         IDisposable? dragLease = null;
         grip.DragStarting += async (_, e) =>
@@ -285,11 +286,14 @@ internal sealed partial class StationWindow : PanelWindow
         };
         body.Children.Add(grip);
         var buttons = BuildItemActions(item, out var copy, out var open);
+        buttons.Visibility = Detached ? Visibility.Collapsed : Visibility.Visible;
         Grid.SetColumn(buttons, 1); body.Children.Add(buttons);
         var card = PanelTheme.Card(body);
+        PanelTheme.Track(card, static surface => surface.Padding = PanelTheme.Value<Thickness>("StationCardPadding"));
         RegisterSelection(item, card, grip);
+        grip.DoubleTapped += async (_, e) => { if (!Detached || busy || ModalActive) return; e.Handled = true; await Run(() => ItemCommand(item, StationAction.Open)); };
         cards.Children.Add(card);
-        if (item.Kind is StationKind.File or StationKind.Folder) _ = LoadPreview(item, preview, card, meta, grip, copy, open, version, label, previewCancellation!.Token);
+        if (item.Kind is StationKind.File or StationKind.Folder) _ = LoadPreview(item, preview, card, meta, grip, copy, open, version, detail, previewCancellation!.Token);
     }
     static string DisplayTitle(StationItem item) => item.Title.Length > 0 ? item.Title : item.Kind is StationKind.File or StationKind.Folder
         ? Path.GetFileName(item.Value) is { Length: > 0 } name ? name : item.Value
@@ -312,12 +316,13 @@ internal sealed partial class StationWindow : PanelWindow
     });
     protected override void OnHiding()
     {
+        groupMenuGeneration++;activeGroupMenu?.Close();
         CloseQuickLook();
         CloseSearch(false);
         workspaceHoverVersion++;
         undoToastTimer.Stop();undoToast.Visibility=Visibility.Collapsed;feedbackTimer.Stop();status.Text="";
         SaveFloatingLayout();
-        if (Detached) SaveQuery(); else searchTimer.Stop(); dayTimer.Stop();
+        if (Detached) SaveQuery(); dayTimer.Stop();
         leaveTimer.Stop(); openedForDrop = false; pin.IsChecked = false; renderVersion++; CancelPreviews();
         cards.Children.Clear(); previewCache.Clear(); ClearSelection();
     }

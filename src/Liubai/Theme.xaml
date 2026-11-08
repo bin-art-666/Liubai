@@ -33,6 +33,7 @@
     <!-- Liubai visual language 1.0. All measurements are effective pixels. -->
     <Thickness x:Key="LiubaiPanelPadding">20,16,20,16</Thickness>
     <Thickness x:Key="LiubaiCardPadding">12</Thickness>
+    <Thickness x:Key="LiubaiStationCardPadding">12,7,12,7</Thickness>
     <CornerRadius x:Key="LiubaiPanelRadius">16</CornerRadius>
     <CornerRadius x:Key="LiubaiCardRadius">12</CornerRadius>
     <CornerRadius x:Key="LiubaiControlRadius">8</CornerRadius>

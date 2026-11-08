@@ -55,6 +55,7 @@ internal static class PanelTheme
         void Set(string key, object value) => resources["Liubai" + key] = value;
         Set("PanelPadding", new Thickness(Math.Round(20 * density), Math.Round(16 * density), Math.Round(20 * density), Math.Round(16 * density)));
         Set("CardPadding", new Thickness(Math.Round(12 * density)));
+        Set("StationCardPadding", new Thickness(Math.Round(12 * density), Math.Round(7 * density), Math.Round(12 * density), Math.Round(7 * density)));
         Set("PanelGap", Math.Round(12 * density)); Set("ActionGap", 4d);
         Set("ControlRadius", new CornerRadius(options.Roundness));
         Set("CardRadius", new CornerRadius(options.Roundness * 1.5)); Set("PanelRadius", new CornerRadius(options.Roundness * 2));

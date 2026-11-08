@@ -27,6 +27,7 @@ internal sealed partial class AiWindow
             }
         }
         await Draft();
+        checks.AddRange(await VerifyProviderStrip());
         var savedStyle = PanelTheme.Current;
         await core.ExecuteScriptAsync("document.getElementById('draft').value='风格变化保留对话草稿'");
         try
@@ -72,9 +73,11 @@ internal sealed partial class AiWindow
         checks.Add("Upper and lower grips resize height with fixed opposite edge; canceled drag and reopen preserve dimensions and draft");
         ToggleDetached();
         await VerifyFloatingCaption(true);
+        VerifyAiHeader(true);
         if (!Detached || !AppWindow.IsShownInSwitchers || !((OverlappedPresenter)AppWindow.Presenter).IsResizable || DismissOnOutside || dockGrip.Visibility != Microsoft.UI.Xaml.Visibility.Collapsed) throw new Exception("Detach behavior mismatch");
         await Draft(); ToggleDetached(); await Draft();
         await VerifyFloatingCaption(false);
+        VerifyAiHeader(false);
         if (Detached || AppWindow.IsShownInSwitchers || !ReferenceEquals(core, current!.View.CoreWebView2) || dockWidth != savedWidth || dockGrip.Visibility != Microsoft.UI.Xaml.Visibility.Visible) throw new Exception("Docking lost browser or dock width");
         checks.Add("Expand and dock preserve the same browser and live draft; switcher and resize behavior follow station");
         Hide(); await Open(display, display.Info.Work.Top); await Draft();
@@ -84,16 +87,16 @@ internal sealed partial class AiWindow
         if (DismissOnOutside || !((OverlappedPresenter)AppWindow.Presenter).IsAlwaysOnTop) throw new Exception("Pin behavior mismatch");
         options.Save(options.Data with { Pinned = false }); if (!DismissOnOutside) throw new Exception("Unpin must restore outside dismissal");
         checks.Add("Pin and unpin use shared outside-dismiss behavior");
-        options.Save(options.Data with { Provider = "doubao" });
+        SelectProvider("doubao");
         await WaitFor(() => current != original && current?.View.CoreWebView2 != null && !Initializing);
-        options.Save(options.Data with { Provider = "deepseek" });
+        SelectProvider("deepseek");
         // Returning after a focus dismissal must preserve the same cached conversation too.
         await Open(display, display.Info.Work.Top); await Draft();
         if (!ReferenceEquals(current, original)) throw new Exception("Service switching discarded original page");
         checks.Add("Service switch retains previous provider's browser and draft");
         _ = await core.ExecuteScriptAsync("window.open('about:blank','fixturepopup')");
         await WaitFor(() => popup?.View.CoreWebView2 != null);
-        if (back.Visibility != Microsoft.UI.Xaml.Visibility.Visible) throw new Exception("Popup missing in-panel back control");
+        if (back.Visibility != Microsoft.UI.Xaml.Visibility.Visible || providerMore.IsEnabled) throw new Exception("Popup missing back control or service switch was left enabled");
         ClosePopup(); await Draft();
         checks.Add("Website popup stays inside panel; returning preserves main conversation");
         ToggleDetached();
@@ -104,6 +107,13 @@ internal sealed partial class AiWindow
         ToggleDetached(); checks.Add("Floating size persists independently of docked dimensions");
         if (Environment.GetCommandLineArgs().Contains("--preview-ai-panel")) await Task.Delay(20000);
         return checks.ToArray();
+    }
+    void VerifyAiHeader(bool detached)
+    {
+        if(!ReferenceEquals(aiNavigation.Parent,detached?aiHeader:root)||root.RowDefinitions.Count!=(detached?3:4)||aiHeaderDivider.Visibility!=(detached?Microsoft.UI.Xaml.Visibility.Visible:Microsoft.UI.Xaml.Visibility.Collapsed))throw new Exception("AI header layout did not follow detached state");
+        foreach(var button in new Microsoft.UI.Xaml.Controls.Primitives.ButtonBase[]{expand,pin})
+            if(button.Width!=PanelTheme.Value<double>("ActionSize")||button.Height!=button.Width||button.BorderThickness.Left!=1||button.Content is not Microsoft.UI.Xaml.Controls.Viewbox)throw new Exception("AI window buttons differ from station framing/vector sizes");
+        if(providerHost.Parent!=aiNavigation)throw new Exception("Moving header replaced the original provider strip");
     }
 }
 

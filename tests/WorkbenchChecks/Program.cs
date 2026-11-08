@@ -84,6 +84,9 @@ try
     Check(UnifiedSearch.Find(" ",station.Items,planner.Data,work.Data).Length==0&&UnifiedSearch.Find("目标短语 不存在",station.Items,planner.Data,work.Data).Length==0,"Empty and all-token matching");
     var many=Enumerable.Range(0,130).Select(i=>new StationItem(Guid.NewGuid(),StationKind.Text,"bounded-result-"+i,"",DateTimeOffset.Now)).ToArray();
     Check(UnifiedSearch.Find("bounded-result",many,PlannerDocument.Empty,WorkDocument.Empty).Length==100,"Search result limit");
+    var allowedIds=many.Skip(110).Select(i=>i.Id).ToHashSet();
+    var scoped=UnifiedSearch.Find("bounded-result",many,PlannerDocument.Empty,WorkDocument.Empty,scope:h=>allowedIds.Contains(h.Id));
+    Check(scoped.Length==20&&scoped.All(h=>allowedIds.Contains(h.Id)),"Search applies current scope before result limit");
     var boundedHistory=new StationHistory(station,hub);var linked=Enumerable.Range(0,11).Select(_=>Guid.NewGuid()).ToArray();
     foreach(var id in linked)await boundedHistory.Execute("加入分组",()=>work.Link(undoGroup,[new(WorkKind.Station,id)]));
     for(int i=0;i<10;i++)await boundedHistory.Undo();

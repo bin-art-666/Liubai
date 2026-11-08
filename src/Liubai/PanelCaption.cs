@@ -11,12 +11,14 @@ internal sealed class PanelCaption : IDisposable
     readonly Window owner;
     readonly FrameworkElement header, controls;
     readonly Func<bool> enabled;
+    readonly FrameworkElement? leading;
     InputNonClientPointerSource? source;
     bool disposed, queued;
-    internal PanelCaption(Window owner, FrameworkElement header, FrameworkElement controls, Func<bool> enabled)
+    internal PanelCaption(Window owner, FrameworkElement header, FrameworkElement controls, Func<bool> enabled, FrameworkElement? leading=null)
     {
-        this.owner = owner; this.header = header; this.controls = controls; this.enabled = enabled;
+        this.owner = owner; this.header = header; this.controls = controls; this.enabled = enabled;this.leading=leading;
         header.Loaded += Loaded; header.SizeChanged += SizeChanged; controls.SizeChanged += SizeChanged;
+        if(leading!=null)leading.SizeChanged+=SizeChanged;
         owner.AppWindow.Changed += WindowChanged;
     }
     void Loaded(object sender, RoutedEventArgs args) => Queue();
@@ -43,7 +45,19 @@ internal sealed class PanelCaption : IDisposable
         int y = origin.Y - window.Top + (int)Math.Round(4 * scale);
         int right = origin.X - window.Left + (int)Math.Floor((buttons.X - 6) * scale);
         int bottom = origin.Y - window.Top + (int)Math.Ceiling((position.Y + header.ActualHeight + 4) * scale);
-        source.SetRegionRects(NonClientRegionKind.Caption, right > x && bottom > y ? [new RectInt32(x, y, right - x, bottom - y)] : []);
+        var regions=new List<RectInt32>();
+        if(right>x&&bottom>y)
+        {
+            if(leading is {Visibility:Visibility.Visible,ActualWidth:>0})
+            {
+                var p=leading.TransformToVisual(root).TransformPoint(new());
+                int left=Math.Clamp(origin.X-window.Left+(int)Math.Floor((p.X-4)*scale),x,right);
+                int end=Math.Clamp(origin.X-window.Left+(int)Math.Ceiling((p.X+leading.ActualWidth+4)*scale),left,right);
+                if(left>x)regions.Add(new(x,y,left-x,bottom-y));if(right>end)regions.Add(new(end,y,right-end,bottom-y));
+            }
+            else regions.Add(new(x,y,right-x,bottom-y));
+        }
+        source.SetRegionRects(NonClientRegionKind.Caption,regions.ToArray());
     }
     internal async Task Verify(bool active)
     {
@@ -71,6 +85,7 @@ internal sealed class PanelCaption : IDisposable
     {
         if (disposed) return; disposed = true;
         header.Loaded -= Loaded; header.SizeChanged -= SizeChanged; controls.SizeChanged -= SizeChanged; owner.AppWindow.Changed -= WindowChanged;
+        if(leading!=null)leading.SizeChanged-=SizeChanged;
         try { source?.ClearRegionRects(NonClientRegionKind.Caption); } catch { /* Window may already be destroyed. */ }
     }
     [DllImport("user32.dll")] static extern bool ClientToScreen(IntPtr window, ref Native.Point point);

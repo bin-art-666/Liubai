@@ -62,7 +62,6 @@ internal sealed partial class StationWindow
             await previewSlots.WaitAsync(token); entered = true; timeout.CancelAfter(TimeSpan.FromSeconds(6));
             var storage = await StationTransfer.Storage(item).WaitAsync(token);
             available = true;
-            if (storage is StorageFile imageFile && imageFile.ContentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase)) label = "图片";
             if (destroyed || version != renderVersion || token.IsCancellationRequested) return;
             var properties = await storage.GetBasicPropertiesAsync().AsTask(token);
             uint size = (uint)Math.Clamp(Math.Ceiling(48 * display.Dpi / 96d), 48, 192);
@@ -113,6 +112,7 @@ internal sealed partial class StationWindow
             if (!destroyed && version == renderVersion && !cancellation.IsCancellationRequested)
             {
                 meta.Text = available ? label : label + " · 原位置暂不可用或已失效";
+                if (!available) ToolTipService.SetToolTip(meta, meta.Text + "\n" + item.Value);
                 grip.CanDrag = available; copy.IsEnabled = available; open.IsEnabled = available;
             }
         }

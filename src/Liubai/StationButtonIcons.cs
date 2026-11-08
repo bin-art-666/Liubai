@@ -8,9 +8,10 @@ internal sealed partial class StationWindow
 {
     const string FolderPath="M 2 6 L 2 15 C 2 16.7 3.3 18 5 18 L 15 18 C 16.7 18 18 16.7 18 15 L 18 7 C 18 5.9 17.1 5 16 5 L 9 5 L 7 3 L 4 3 C 2.9 3 2 3.9 2 5 L 2 6 L 18 6";
     const string GroupPath="M 2 7 L 2 14 C 2 15.7 3.3 17 5 17 L 9 17 M 2 7 L 17 7 L 17 9 M 2 7 L 2 5 C 2 3.9 2.9 3 4 3 L 7 3 L 9 5 L 15 5 C 16.1 5 17 5.9 17 7 M 19 14 C 19 16.8 16.8 19 14 19 C 11.2 19 9 16.8 9 14 C 9 11.2 11.2 9 14 9 C 16.8 9 19 11.2 19 14 Z M 14 11.5 L 14 16.5 M 11.5 14 L 16.5 14";
-    static void SetStationIcon(ButtonBase button,string glyph)
+    internal static void SetStationIcon(ButtonBase button,string glyph)
     {
         string? data=glyph switch {
+            "\uE787"=>"M 5 2 L 5 6 M 15 2 L 15 6 M 2 8 L 18 8 M 4 4 L 16 4 C 17.1 4 18 4.9 18 6 L 18 16 C 18 17.1 17.1 18 16 18 L 4 18 C 2.9 18 2 17.1 2 16 L 2 6 C 2 4.9 2.9 4 4 4 M 6 11 L 8 11 M 12 11 L 14 11 M 6 14 L 8 14",
             "\uE721"=>"M 14.5 8.5 C 14.5 11.8 11.8 14.5 8.5 14.5 C 5.2 14.5 2.5 11.8 2.5 8.5 C 2.5 5.2 5.2 2.5 8.5 2.5 C 11.8 2.5 14.5 5.2 14.5 8.5 Z M 13 13 L 18 18",
             "\uE740"=>"M 3 11 L 3 17 L 9 17 M 3 17 L 17 3 M 11 3 L 17 3 L 17 9",
             "\uE73F"=>"M 2 9 L 8 9 L 8 3 M 2 15 L 8 9 M 12 17 L 12 11 L 18 11 M 12 11 L 18 5",

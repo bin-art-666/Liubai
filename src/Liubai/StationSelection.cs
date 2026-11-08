@@ -25,12 +25,31 @@ internal sealed partial class StationWindow
         var host = new ItemsControl { ItemsPanel = (ItemsPanelTemplate)Microsoft.UI.Xaml.Markup.XamlReader.Load("<ItemsPanelTemplate xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation'><WrapGrid Orientation='Horizontal' MaximumRowsOrColumns='5'/></ItemsPanelTemplate>") };
         void Add(Button button, Func<Task> run)
         { button.Margin = new Thickness(0, 0, 6, 5); button.Click += async (_, _) => await Run(run); host.Items.Add(button); }
-        Add(IconButton("\uE8F4","将所选项目加入分组"), () => ChooseWorkspace(SelectionItems()));
+        var groupButton=IconButton("\uE8F4","将所选项目加入分组");groupButton.Margin=new Thickness(0,0,6,5);
+        AttachGroupButton(groupButton, SelectedGroupItems);host.Items.Add(groupButton);
         Add(ItemAction("复制所选项目",CopyPath), async () => { var data = new DataPackage(); await StationTransfer.FillMany(data, SelectionItems(), store.AttachmentDirectory); Clipboard.SetContent(data); Clipboard.Flush(); status.Text = "已复制所选项目"; });
         var archiveSelected = ItemAction("归档所选项目",ArchivePath);archiveSelected.Margin=new Thickness(0,0,6,5); archiveSelected.Click += async (_, _) => await Archive(); host.Items.Add(archiveSelected);
         Add(IconButton("\uE74D","移除所选项目"), RemoveSelection);
         Add(IconButton("\uE8BB","取消选择"), () => { ClearSelection(); return Task.CompletedTask; }); selectionBar.Children.Add(host); footer.Children.Add(selectionBar);
         root.KeyDown += SelectionKey;
+        // A completed tap excludes panning and dragging. Inspect the original
+        // ancestry so a bubbled button/card tap never clears its command target.
+        cards.Background = new SolidColorBrush(Colors.Transparent);
+        root.AddHandler(UIElement.TappedEvent, new TappedEventHandler((_, e) =>
+            TryClearSelectionFromBlank(e.OriginalSource as DependencyObject)), true);
+    }
+    bool TryClearSelectionFromBlank(DependencyObject? source)
+    {
+        if (selection.Count == 0 || SearchActive || QuickLookOpen || busy || ModalActive || DragActive || stationResizing) return false;
+        for (var element = source; element != null; element = VisualTreeHelper.GetParent(element))
+        {
+            if (element == root) { ClearSelection(); return true; }
+            if (element == stationHeader || selectionCards.Values.Any(card => ReferenceEquals(card, element))
+                || element is Control and not ScrollViewer
+                || element is TextBlock { IsTextSelectionEnabled: true }) return false;
+        }
+        // Popup/menu roots are outside the panel content tree.
+        return false;
     }
     async void SelectionKey(object sender, KeyRoutedEventArgs e)
     {
@@ -57,7 +76,7 @@ internal sealed partial class StationWindow
         grip.Tapped+=(_,_)=> { if(!KeyDown(VirtualKey.Control)&&!KeyDown(VirtualKey.Shift)&&!busy&&!ModalActive) { selection.Clear();selection.Add(item.Id);selectionAnchor=item.Id;PaintSelection(); } };
         var menu = new MenuFlyout();
         foreach (var action in StationActions.Available(item.Kind))
-        { var entry = new MenuFlyoutItem { Text = StationActions.Label(action) }; entry.Click += async (_, _) => await Run(() => ItemCommand(item, action)); menu.Items.Add(entry); }
+        { if(action==StationAction.Group){AddGroupSubmenu(menu,()=>GroupItems(item));continue;} var entry = new MenuFlyoutItem { Text = StationActions.Label(action) }; entry.Click += async (_, _) => { activeGroupMenu?.Close(); await Run(() => ItemCommand(item, action)); }; menu.Items.Add(entry); }
         AddLocateAction(menu,item); card.ContextFlyout = menu; PaintCard(item.Id, card);
     }
     void SelectItem(Guid id,bool control,bool shift)
@@ -77,7 +96,7 @@ internal sealed partial class StationWindow
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetHelpText(card, selection.Contains(id) ? "已选择" : "按 Ctrl 添加选择，Shift 连选");
     }
     void PaintSelection()
-    { foreach (var (id, card) in selectionCards) PaintCard(id, card); selectionCount.Text = $"已选 {selection.Count} 项"; selectionBar.Visibility = selection.Count == 0 ? Visibility.Collapsed : Visibility.Visible; }
+    { foreach (var (id, card) in selectionCards) PaintCard(id, card); selectionCount.Text = $"已选 {selection.Count} 项"; selectionBar.Visibility = !Detached && selection.Count > 0 ? Visibility.Visible : Visibility.Collapsed; UpdateExpandedActions(); }
     void ClearSelection() { selection.Clear(); selectionAnchor = null; PaintSelection(); }
     void PruneSelection(StationItem[] visible) { selection.IntersectWith(visible.Select(i => i.Id)); PaintSelection(); }
     StationItem[] SelectionItems() { var current = CurrentItems(); return selection.Count > 0 ? current.Where(i => selection.Contains(i.Id)).ToArray() : current; }

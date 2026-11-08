@@ -7,6 +7,8 @@ namespace Liubai;
 internal sealed partial class UnifiedSearchView : Grid
 {
     readonly TextBox query=new() {PlaceholderText="搜索资料、分组、待办和笔记",MaxLength=200};
+    readonly ComboBox scope = new() { HorizontalAlignment=HorizontalAlignment.Stretch, Visibility=Visibility.Collapsed };
+    Func<SearchHit,bool>? scopeFilter;
     readonly ListView results=new() {SelectionMode=ListViewSelectionMode.Single,IsItemClickEnabled=true,MaxHeight=470,Background=null};
     readonly Func<SearchHit,Task> open;
     readonly Microsoft.UI.Dispatching.DispatcherQueueTimer debounce;
@@ -20,7 +22,10 @@ internal sealed partial class UnifiedSearchView : Grid
     {
         this.open=open;
         Layout.RowDefinitions.Add(new(){Height=GridLength.Auto});Layout.RowDefinitions.Add(new(){Height=new GridLength(1,GridUnitType.Star)});Layout.RowDefinitions.Add(new(){Height=GridLength.Auto});
-        Layout.Children.Add(query);Grid.SetRow(results,1);results.MaxHeight=double.PositiveInfinity;Layout.Children.Add(results);Grid.SetRow(StatusLine,2);Layout.Children.Add(StatusLine);Children.Add(Layout);
+        var inputs=new StackPanel {Spacing=8};inputs.Children.Add(query);inputs.Children.Add(scope);
+        scope.Items.Add("当前分类／分组");scope.Items.Add("全部内容");scope.SelectedIndex=0;scope.SelectionChanged+=(_,_)=>Schedule();
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(scope,"搜索范围");
+        Layout.Children.Add(inputs);Grid.SetRow(results,1);results.MaxHeight=double.PositiveInfinity;Layout.Children.Add(results);Grid.SetRow(StatusLine,2);Layout.Children.Add(StatusLine);Children.Add(Layout);
         KeyDown+=(_,e)=>{if(e.Key==VirtualKey.Escape){e.Handled=true;back();}};
         debounce=DispatcherQueue.CreateTimer();debounce.IsRepeating=false;debounce.Interval=TimeSpan.FromMilliseconds(220);debounce.Tick+=async (_,_)=>await Search();
         query.TextChanged+=(_,_)=>Schedule();
@@ -34,6 +39,8 @@ internal sealed partial class UnifiedSearchView : Grid
         if(!subscribed){App.Station.Changed+=SourceChanged;App.Planner.Changed+=SourceChanged;App.WorkStore.Changed+=SourceChanged;subscribed=true;}
         IsOpen=true;DispatcherQueue.TryEnqueue(()=>{if(IsOpen)query.Focus(FocusState.Programmatic);});Schedule();
     }
+    internal void ConfigureScope(bool expanded,Func<SearchHit,bool>? filter)
+    {scopeFilter=filter;scope.Visibility=expanded?Visibility.Visible:Visibility.Collapsed;scope.SelectedIndex=expanded?0:1;}
     void SourceChanged(){if(IsOpen)Schedule();}
     void Schedule(){version++;cancellation?.Cancel();results.IsEnabled=false;debounce.Stop();if(IsOpen){StatusLine.Text=query.Text.Trim().Length==0?"":"正在搜索…";debounce.Start();}}
     async Task Search()
@@ -42,7 +49,8 @@ internal sealed partial class UnifiedSearchView : Grid
         cancellation?.Dispose();cancellation=new CancellationTokenSource();var token=cancellation.Token;
         string text=query.Text;var station=App.Station.Items.ToArray();var planner=App.Planner.Data;var work=App.WorkStore.Data;
         try {
-            var hits=await Task.Run(()=>UnifiedSearch.Find(text,station,planner,work,token),token);
+            var filter=scope.SelectedIndex==0?scopeFilter:null;
+            var hits=await Task.Run(()=>UnifiedSearch.Find(text,station,planner,work,token,filter),token);
             if(!IsOpen||current!=version||token.IsCancellationRequested)return;
             results.Items.Clear();
             foreach(var hit in hits){
@@ -65,6 +73,6 @@ internal sealed partial class UnifiedSearchView : Grid
         finally {opening=false;}
     }
     internal void Stop()
-    {IsOpen=false;debounce.Stop();version++;cancellation?.Cancel();cancellation?.Dispose();cancellation=null;results.Items.Clear();if(subscribed){App.Station.Changed-=SourceChanged;App.Planner.Changed-=SourceChanged;App.WorkStore.Changed-=SourceChanged;subscribed=false;}}
+    {IsOpen=false;debounce.Stop();version++;cancellation?.Cancel();cancellation?.Dispose();cancellation=null;scopeFilter=null;results.Items.Clear();if(subscribed){App.Station.Changed-=SourceChanged;App.Planner.Changed-=SourceChanged;App.WorkStore.Changed-=SourceChanged;subscribed=false;}}
 
 }
