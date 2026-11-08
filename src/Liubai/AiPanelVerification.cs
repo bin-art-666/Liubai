@@ -105,7 +105,7 @@ internal sealed partial class AiWindow
         ToggleDetached(); ToggleDetached(); await Draft();
         if (AppWindow.Size.Width != expected!.Width || AppWindow.Size.Height != expected.Height) throw new Exception("Floating geometry lost");
         ToggleDetached(); checks.Add("Floating size persists independently of docked dimensions");
-        if (Environment.GetCommandLineArgs().Contains("--preview-ai-panel")) await Task.Delay(20000);
+        if (Environment.GetCommandLineArgs().Contains("--preview-ai-panel")) { options.Save(options.Data with{Pinned=true});ShowPanel();await Task.Delay(20000); }
         return checks.ToArray();
     }
     void VerifyAiHeader(bool detached)

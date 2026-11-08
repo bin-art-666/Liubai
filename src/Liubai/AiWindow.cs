@@ -85,6 +85,7 @@ internal sealed partial class AiWindow : PanelWindow
         var browserHost = new Grid(); browserHost.Children.Add(browsers); InitializeDropInbox(browserHost);
         var content = new Border { CornerRadius = PanelTheme.Value<CornerRadius>("CardRadius"), Child = dropContent, Background = new SolidColorBrush(Colors.Transparent) };
         PanelTheme.Track(content, static border => border.CornerRadius = PanelTheme.Value<CornerRadius>("CardRadius"));
+        InitializeViewportMask();
         Grid.SetRow(content, 2); root.Children.Add(content);
         var footer = new StackPanel { Spacing = 6 }; footer.Children.Add(status); footer.Children.Add(retry);
         retry.Click += async (_, _) => { if (current is null) return; if (current.View.CoreWebView2 != null && !current.Failed) current.View.Reload(); else { Remove(current); current = null; await ShowSelected(); } };
@@ -169,6 +170,7 @@ internal sealed partial class AiWindow : PanelWindow
             await page.View.EnsureCoreWebView2Async(page.Environment);
             if (destroyed) return;
             Configure(page.View, page);
+            await MaskBrowser(page.View);
             await page.View.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync("window.addEventListener('dragover',e=>e.preventDefault(),true);window.addEventListener('drop',e=>{e.preventDefault();e.stopImmediatePropagation();},true);");
             if (verification) page.View.NavigateToString("<!doctype html><html><meta charset='utf-8'><style>body{font:16px system-ui;padding:20px;background:#eef5fa}textarea{width:90%;height:180px;padding:10px;font:16px system-ui}</style><h2>AI 面板测试页</h2><p>仅本机测试，不连接 AI 网站。</p><textarea id='draft'>保留我的草稿</textarea></html>");
             else page.View.CoreWebView2.Navigate(page.Endpoint.Url);
@@ -191,7 +193,7 @@ internal sealed partial class AiWindow : PanelWindow
                 popup = new(page, target); back.Visibility = Visibility.Visible; RefreshProviderEnabled(); page.View.Visibility = Visibility.Collapsed;
                 await target.EnsureCoreWebView2Async(page.Environment);
                 if (destroyed || popup?.View != target) return;
-                Configure(target, page); args.NewWindow = target.CoreWebView2;
+                Configure(target, page); await MaskBrowser(target); args.NewWindow = target.CoreWebView2;
             }
             catch { if (popup?.View == target) ClosePopup(); SetStatus("附加页面无法打开，请返回后重试。"); }
             finally { deferral.Complete(); }
@@ -205,10 +207,11 @@ internal sealed partial class AiWindow : PanelWindow
             if (!verification && !AiPolicy.AllowedNavigation(args.Uri)) { args.Cancel = true; SetStatus("该链接无法在 AI 面板内打开，仅支持安全网页。"); return; }
             PageStatus(page, page.Endpoint.Name + " · 正在载入网页…");
         };
-        core.NavigationCompleted += (_, args) =>
+        core.NavigationCompleted += (sender, args) =>
         {
             if (destroyed) return;
             string host = Uri.TryCreate(core.Source, UriKind.Absolute, out var uri) ? uri.Host : "";
+            if(args.IsSuccess)_ = MaskBrowser(view);
             PageStatus(page, args.IsSuccess ? page.Endpoint.Name + (host.Length > 0 ? " · " + host : "") : "网页加载失败（" + args.WebErrorStatus + "），可点击重新加载。", !args.IsSuccess);
         };
         core.ProcessFailed += (_, _) => { if (!destroyed) { page.Failed = true; PageStatus(page, "网页进程已停止，点击重新加载可恢复页面。", true); } };
@@ -216,10 +219,10 @@ internal sealed partial class AiWindow : PanelWindow
     void ClosePopup()
     {
         if (popup is not { } value) return;
-        popup = null; browsers.Children.Remove(value.View); value.View.Close(); back.Visibility = Visibility.Collapsed; RefreshProviderEnabled();
+        popup = null; maskRegistrations.Remove(value.View); browsers.Children.Remove(value.View); value.View.Close(); back.Visibility = Visibility.Collapsed; RefreshProviderEnabled();
         if (current == value.Owner) current.View.Visibility = Visibility.Visible;
     }
-    void Remove(Page page) { pages.Remove(page.Endpoint.Key); browsers.Children.Remove(page.View); page.View.Close(); }
+    void Remove(Page page) { maskRegistrations.Remove(page.View); pages.Remove(page.Endpoint.Key); browsers.Children.Remove(page.View); page.View.Close(); }
     internal void HideDocked() { if (!Detached) Hide(); }
     protected override void OnHiding()
     {

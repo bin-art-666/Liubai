@@ -112,6 +112,7 @@ public partial class App : Application
         {
             manager = new BarManager(preferences, Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread());
             manager.Start(arguments.Contains("--show-settings"));
+            if(arguments.Contains("--preview-ai-panel"))_ = Ai.PreviewViewport(Native.Monitors().First(m=>m.Primary),Native.PrimaryMonitor().Work.Top);
             if (startupLaunch) StartupService.Log("ready");
             if (arguments.Contains("--verify-manager-quit")) _ = manager.VerifyManagerQuit();
             else if (arguments.Contains("--verify-desktop")) _ = manager.VerifyDesktop();
