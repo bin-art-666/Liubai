@@ -155,9 +155,9 @@ public sealed partial class BarWindow
             preferences.SetExpandedAppearance(new(true)); fullscreen = true; UpdateVisibility(); RenderAppearance();
             if (!windowShown) throw new InvalidOperationException("Bar was hidden in enabled fullscreen mode.");
             preferences.SetExpandedAppearance(new(false)); RenderAppearance(); UpdateVisibility();
-            if (windowShown) throw new InvalidOperationException("Disabled fullscreen override did not retain auto-hide.");
+            if (!windowShown) throw new InvalidOperationException("Appearance option changed resident visibility mode.");
             fullscreen = false; UpdateVisibility();
-            checks.Add(new { fullscreen = "PASS", enabledVisibility = "PASS", disabledAutoHide = "PASS" });
+            checks.Add(new { fullscreen = "PASS", enabledVisibility = "PASS", appearanceIndependentVisibility = "PASS" });
             var stripes = new Grid();
             int stripeCount = (int)Math.Ceiling((bounds.Right - bounds.Left) / (4 * Display.Dpi / 96d));
             for (int column = 0; column < stripeCount; column++)

@@ -118,8 +118,8 @@ public sealed partial class BarWindow : Window
             manager?.EnvironmentChanged(message, parameter);
             if (manager == null)
             {
-                if (message == 0x02B1 && parameter == 7 || message == 0x0218 && parameter == 4) App.CurrentGuard?.SetSuspended(true);
-                if (message == 0x02B1 && parameter == 8 || message == 0x0218 && parameter is 7 or 18) App.CurrentGuard?.SetSuspended(SessionState.Locked == true);
+                if (message == 0x02B1 && parameter == 7 || message == 0x0218 && parameter == 4) { App.CurrentGuard?.SetSuspended(true); SetAutoHideSuspended(true); }
+                if (message == 0x02B1 && parameter == 8 || message == 0x0218 && parameter is 7 or 18) { App.CurrentGuard?.SetSuspended(SessionState.Locked == true); SetAutoHideSuspended(SessionState.Locked == true); }
                 if (message is 0x007E or 0x02E0) App.CurrentGuard?.DisplayChanged();
             }
         });
@@ -195,12 +195,15 @@ public sealed partial class BarWindow : Window
             () => Display, () => preferences.Expanded.Mode != ExpandedMode.Custom);
         appearanceMonitor.SetSpeed(preferences.Expanded.Speed);
         appearanceMonitor.SetEnabled(preferences.Expanded.Enabled && !preferences.FollowPaused && manager?.Suspended != true);
+        InitializeAutoHide();
         if (showSettings)
         {
+            RevealAutoBar();
             if (surface.IsLoaded) OpenSettings();
             else surface.Loaded += ShowSettingsOnLoad;
         }
-        if (Environment.GetCommandLineArgs().Contains("--verify-station-experience")) _ = VerifyStationExperience();
+        if (Environment.GetCommandLineArgs().Contains("--verify-auto-hide")) _ = VerifyAutoHide();
+        else if (Environment.GetCommandLineArgs().Contains("--verify-station-experience")) _ = VerifyStationExperience();
         else if (Environment.GetCommandLineArgs().Contains("--verify-workbench")) _ = VerifyWorkbench();
         else if (Environment.GetCommandLineArgs().Contains("--verify-tool-host")) _ = VerifyToolHost();
         else if (Environment.GetCommandLineArgs().Contains("--verify-updates") || Environment.GetCommandLineArgs().Contains("--verify-updates-network")) _ = VerifyUpdates();
@@ -255,7 +258,7 @@ public sealed partial class BarWindow : Window
         stationHoverTimer?.Stop();
         clockBadgeTimer?.Stop(); App.Clock.Changed -= ClockChanged; preferences.ClockFontSizeChanged -= ClockChanged;
         screenshotTipTimer.Stop(); screenshotTip.IsOpen = false;
-        transition.Cancel(); appearanceMonitor?.Dispose(); tray?.Dispose(); tray = null;
+        autoHideTimer?.Stop();StopAutoEntrance();transition.Cancel(); appearanceMonitor?.Dispose(); tray?.Dispose(); tray = null;
         panelLifecycle?.Release();
         reservation.Dispose(); SystemBackdrop = null; Close();
     }
@@ -263,7 +266,7 @@ public sealed partial class BarWindow : Window
     void UpdateTray()
     {
         if (!Display.Primary) { tray?.Dispose(); tray = null; return; }
-        tray ??= new TrayIcon(handle, DispatcherQueue, OpenSettings, ToggleBar, () => barVisible,
+        tray ??= new TrayIcon(handle, DispatcherQueue, RequestSettings, ToggleBar, () => barVisible,
             () => preferences.Style, SetStyle, Quit, () => preferences.FollowPaused,
             () => { if (manager != null) manager.TogglePause(); else { preferences.SetFollowPaused(!preferences.FollowPaused); preferences.SaveCurrent(); ApplyExpanded(); } },
             () => { _ = tools!.Invoke("todo"); }, () => { _ = tools!.Invoke("note"); }, () => OpenStation(), () => OpenClock());
@@ -272,7 +275,7 @@ public sealed partial class BarWindow : Window
     {
         bool changed = Display != display;
         Display = display; UpdateTray();
-        if (changed) { transition.Cancel(); Position(); appearanceMonitor?.Refresh(); settingsWindow?.UpdateDisplay(display); stationWindow?.UpdateDisplay(display); clockWindow?.UpdateDisplay(display); App.CurrentAi?.UpdateDisplay(display); }
+        if (changed) { nextVisibilityProbe=0; transition.Cancel(); Position(); appearanceMonitor?.Refresh(); settingsWindow?.UpdateDisplay(display); stationWindow?.UpdateDisplay(display); clockWindow?.UpdateDisplay(display); App.CurrentAi?.UpdateDisplay(display); }
     }
     internal void RefreshMaterial() => ApplyGlass();
     internal void RefreshEnvironment()
@@ -283,7 +286,7 @@ public sealed partial class BarWindow : Window
         appearanceMonitor?.Refresh();
     }
     internal void RefreshHeight() => Position();
-    internal void RefreshSettings() { ApplyExpanded(); ApplyGlass(); Position(); }
+    internal void RefreshSettings() { ConfigureAutoHide();ApplyExpanded(); ApplyGlass(); Position(); }
     internal void RefreshPanel() => settingsWindow?.RefreshStyle(preferences.Style);
     internal bool Monitoring => appearanceMonitor?.Enabled == true;
     internal int SampleCount => appearanceMonitor?.SampleCount ?? 0;
@@ -295,11 +298,13 @@ public sealed partial class BarWindow : Window
     internal bool PanelModal => QrSelectionWindow.Active || panelLifecycle?.Modal == true;
     internal void RequestSettings()
     {
+        if(barVisible)RevealAutoBar();
         if (surface.IsLoaded) OpenSettings(); else surface.Loaded += ShowSettingsOnLoad;
     }
     internal void Recover(bool suspended)
     {
         if (closing) return;
+        SetAutoHideSuspended(suspended);
         QrSelectionWindow.CancelActive();
         transition.Cancel(); appearanceMonitor?.SetEnabled(false);
         if (suspended) { HidePanels(); return; }
@@ -321,7 +326,8 @@ public sealed partial class BarWindow : Window
         actions.Visibility = preferences.BarHeight >= 24 ? Visibility.Visible : Visibility.Collapsed;
         foreach (var button in actions.Children.OfType<Button>()) button.Height = Math.Min(28, preferences.BarHeight);
         QueueToolbarLayout();
-        var approved = reservation.Reserve(Display.BarBounds(preferences.BarHeight));
+        var approved = Display.BarBounds(preferences.BarHeight);
+        if(AutoHideActive)reservation.Release();else approved=reservation.Reserve(approved);
         var actual = new Windows.Graphics.RectInt32(AppWindow.Position.X, AppWindow.Position.Y, AppWindow.Size.Width, AppWindow.Size.Height);
         if (!Native.Same(approved, actual)) { transition.Cancel(); AppWindow.MoveAndResize(approved); }
     }
@@ -378,6 +384,7 @@ public sealed partial class BarWindow : Window
 
     void ApplyExpanded()
     {
+        ConfigureAutoHide();
         appearanceMonitor?.SetEnabled(preferences.Expanded.Enabled && !preferences.FollowPaused && manager?.Suspended != true);
         appearanceMonitor?.SetSpeed(preferences.Expanded.Speed);
         if (appearanceMonitor != null) expandedSnapshot = appearanceMonitor.Current;
@@ -388,15 +395,15 @@ public sealed partial class BarWindow : Window
     void UpdateVisibility()
     {
         if (closing) return;
-        bool show = barVisible && (!fullscreen || preferences.Expanded.Enabled) && !(App.CurrentGuard?.AlertBlackout == true);
+        bool show = barVisible && !autoSuspended && manager?.Suspended!=true && (!AutoHideActive||autoVisibility.Visible) && !(App.CurrentGuard?.AlertBlackout == true);
         if (show != windowShown)
         {
             transition.Cancel();
-            if (show) { Position(); AppWindow.Show(false); Native.RemoveWindowFrame(handle); }
-            else { FinishToolbarDrag(false); AppWindow.Hide(); }
+            if (show) { Position(); AppWindow.Show(false); Native.RemoveWindowFrame(handle);AnimateAutoReveal(); }
+            else { StopAutoEntrance();FinishToolbarDrag(false); AppWindow.Hide(); }
             windowShown = show;
         }
-        if (show && fullscreen) Native.KeepOnTop(handle);
+        if (show && (fullscreen||AutoHideActive)) Native.KeepOnTop(handle);
     }
 
     void ToggleSettings()
@@ -474,6 +481,7 @@ public sealed partial class BarWindow : Window
     internal void SetVisible(bool visible)
     {
         barVisible = visible;
+        if(visible)autoVisibility.Reveal();ConfigureAutoHide();
         if (barVisible) Position();
         else { HidePanels(); reservation.Release(); }
         UpdateVisibility();

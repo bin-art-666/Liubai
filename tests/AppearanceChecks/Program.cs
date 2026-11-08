@@ -14,6 +14,7 @@ try
 {
     File.WriteAllText(path, "{\"Style\":0}");
     var store = new AppearanceStore(path);
+    Check(store.DisplayMode==BarDisplayMode.Always,"Old settings default to resident mode.");
     Check(store.ToolbarItems.SequenceEqual(ToolbarOrder.Defaults), "Older configurations use the familiar toolbar order.");
     var normalizedOrder = ToolbarOrder.Normalize(["settings", "unknown", "settings", "clock"]);
     Check(normalizedOrder.SequenceEqual(new[] { "guard", "privacy", "ai", "settings", "clock", "screenshot", "qr", "todo", "note", "station" }), "Unknown or duplicate items cannot hide icons; new controls appear before settings.");
@@ -280,7 +281,26 @@ try
     var legacyMaterial = new AppearanceStore(legacyMaterialPath).Material;
     Check(!legacyMaterial.NoBase && legacyMaterial.Thin && legacyMaterial.TintOpacity == .3f,
         "Existing material JSON without NoBase must retain its original acrylic base and tint.");
-    Console.WriteLine($"PASS: {count} appearance persistence, palette and scene stability checks");
+    restored.SetDisplayMode(BarDisplayMode.AutoHide);restored.SaveCurrent();
+    Check(new AppearanceStore(path).DisplayMode==BarDisplayMode.AutoHide,"Auto-hide selection survives restart.");
+    restored.Export(exported);imported.Import(exported);Check(imported.DisplayMode==BarDisplayMode.AutoHide,"Display mode participates in configuration import/export.");
+    File.WriteAllText(exported,"{\"DisplayMode\":99}");
+    bool invalidImport=false;try{imported.Import(exported);}catch(InvalidDataException){invalidImport=true;}
+    Check(invalidImport&&imported.DisplayMode==BarDisplayMode.AutoHide,"Invalid imported display mode leaves current settings intact.");
+    imported.ResetDefaults();Check(imported.DisplayMode==BarDisplayMode.Always,"Reset restores resident mode.");
+    bool invalidMode=false;try{restored.SetDisplayMode((BarDisplayMode)99);}catch(ArgumentOutOfRangeException){invalidMode=true;}Check(invalidMode,"Reject unknown display mode.");
+    var visibility=new BarVisibilityPolicy();visibility.Reset(false);
+    Check(!visibility.Update(true,false,false,false,0),"Center edge cannot reveal a hidden bar.");
+    Check(!visibility.Update(true,true,false,false,10)&&!visibility.Update(true,true,false,false,209)&&visibility.Update(true,true,false,false,210),"Reveal requires a continuous 200ms edge dwell.");
+    Check(visibility.Update(true,false,false,false,220)&&visibility.Update(true,false,false,false,919)&&!visibility.Update(true,false,false,false,920),"Hide only after 700ms outside.");
+    Check(visibility.Update(true,false,false,true,1000)&&visibility.Update(true,false,false,true,3000),"Panel/menu/drag operations protect visibility.");
+    Check(visibility.Update(false,false,false,false,4000),"Resident mode restores visibility.");
+    visibility.Reset(false);visibility.Update(true,true,false,false,0);visibility.Update(true,false,false,false,150);
+    Check(!visibility.Update(true,true,false,false,200)&&!visibility.Update(true,true,false,false,399)&&visibility.Update(true,true,false,false,400),"Leaving an edge cancels its dwell.");
+    Check(BarVisibilityPolicy.HotEdge(0,0,0,0,900,1000,2)&&!BarVisibilityPolicy.HotEdge(300,0,0,0,900,1000,2)&&!BarVisibilityPolicy.HotEdge(599,0,0,0,900,1000,2)&&BarVisibilityPolicy.HotEdge(600,0,0,0,900,1000,2),"Only left and right thirds trigger.");
+    Check(!BarVisibilityPolicy.HotEdge(900,0,0,0,900,1000,2)&&!BarVisibilityPolicy.HotEdge(1,2,0,0,900,1000,2)&&BarVisibilityPolicy.HotEdge(-1900,-1200,-1920,-1200,1920,1080,3),"Monitor bounds, negative coordinates and scaled edge thickness are respected.");
+    var otherMonitor=new BarVisibilityPolicy();otherMonitor.Reset(false);Check(!otherMonitor.Update(true,false,false,false,5000)&&visibility.Visible,"Monitor visibility policies are independent.");
+    Console.WriteLine($"PASS: {count} appearance persistence, palette, visibility and scene stability checks");
 }
 finally
 {

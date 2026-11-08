@@ -95,6 +95,16 @@ internal sealed class ExpandedWindowMonitor : IDisposable
 
 internal sealed class WindowColorSampler
 {
+    // Geometry-only visibility probe, including while one of our panels owns focus.
+    internal bool ExpandedForVisibility(DesktopMonitor display)
+    {
+        var target=Native.GetAncestor(Native.GetForegroundWindow(),3);
+        if(target!=IntPtr.Zero&&ClassName(target) is "Progman" or "WorkerW")return false;
+        if(target!=IntPtr.Zero&&Eligible(target,display.Handle))return IsExpanded(target,display.Handle);
+        IntPtr local=IntPtr.Zero;
+        EnumWindows((window,_)=>{if(!Eligible(window,display.Handle))return true;local=window;return false;},IntPtr.Zero);
+        return local!=IntPtr.Zero&&IsExpanded(local,display.Handle);
+    }
     IntPtr lastTarget;
     uint lastPid;
     bool ignoredProcess;

@@ -9,6 +9,7 @@ internal sealed partial class SettingsWindow
     ToggleSwitch allDisplays = null!, followPaused = null!, startup = null!;
     TextBlock startupInfo = null!;
     ComboBox personalPresets = null!;
+    ComboBox barDisplayMode=null!;
     TextBox presetName = null!;
     Button usePreset = null!, deletePreset = null!;
     bool fileDialogOpen;
@@ -16,6 +17,10 @@ internal sealed partial class SettingsWindow
     Expander BuildDailySettings()
     {
         var panel = new StackPanel { Spacing = 14 };
+        barDisplayMode=Combo("顶栏显示方式","常驻顶部","自动隐藏","最大化／全屏时隐藏");
+        panel.Children.Add(barDisplayMode);
+        panel.Children.Add(Hint("隐藏后，将鼠标移到本屏顶部左侧或右侧 1/3，停留约 200 毫秒唤出；中间 1/3 不触发。离开顶栏及面板后约 700 毫秒收起。临时唤出覆盖窗口，不挤动工作区。"));
+        barDisplayMode.SelectionChanged+=(_,_)=>SaveGeneral();
         allDisplays = new ToggleSwitch { Header = "显示范围", OnContent = "所有屏幕", OffContent = "仅主屏" };
         followPaused = new ToggleSwitch { Header = "暂停颜色跟随", OnContent = "保持当前外观", OffContent = "自动跟随窗口" };
         startup = new ToggleSwitch { Header = "开机启动", OnContent = "登录后延迟 15 秒启动", OffContent = "手动启动" };
@@ -51,7 +56,7 @@ internal sealed partial class SettingsWindow
         {
             using var lease = KeepOpen();
             var confirm = new ContentDialog { XamlRoot = ((FrameworkElement)Content).XamlRoot,
-                Title = "恢复默认设置？", Content = "恢复默认外观、字号、图标顺序、36 像素高度及所有屏幕显示，并恢复颜色跟随。个人预设和开机启动选择会保留。",
+                Title = "恢复默认设置？", Content = "恢复默认外观、字号、图标顺序、36 像素高度、常驻顶部及所有屏幕显示，并恢复颜色跟随。个人预设和开机启动选择会保留。",
                 PrimaryButtonText = "恢复默认", CloseButtonText = "取消", DefaultButton = ContentDialogButton.Close };
             if (await confirm.ShowAsync() != ContentDialogResult.Primary) return;
             try
@@ -118,6 +123,7 @@ internal sealed partial class SettingsWindow
     void RefreshDailySettings()
     {
         allDisplays.IsOn = preferences.AllDisplays; followPaused.IsOn = preferences.FollowPaused;
+        barDisplayMode.SelectedIndex=(int)preferences.DisplayMode;
         try { startup.IsOn = StartupService.Enabled; startup.IsEnabled = true; } catch { startup.IsEnabled = false; }
         RefreshPersonalPresets();
         RefreshScreenshotSettings();
@@ -140,10 +146,12 @@ internal sealed partial class SettingsWindow
     {
         if (syncing || !interactive) return;
         if (!PrepareSave()) { RefreshStyle(preferences.Style); return; }
-        bool oldAll = preferences.AllDisplays, oldPaused = preferences.FollowPaused;
+        bool oldAll = preferences.AllDisplays, oldPaused = preferences.FollowPaused;var oldMode=preferences.DisplayMode;
+        if(barDisplayMode.SelectedIndex<0)return;
+        preferences.SetDisplayMode((BarDisplayMode)barDisplayMode.SelectedIndex);
         preferences.SetAllDisplays(allDisplays.IsOn); preferences.SetFollowPaused(followPaused.IsOn);
         try { preferences.SaveCurrent(); adapt(); status.Text = "日常设置已保存"; }
-        catch { preferences.SetAllDisplays(oldAll); preferences.SetFollowPaused(oldPaused); RefreshStyle(preferences.Style); ShowSaveError(); }
+        catch { preferences.SetAllDisplays(oldAll); preferences.SetFollowPaused(oldPaused);preferences.SetDisplayMode(oldMode); RefreshStyle(preferences.Style); ShowSaveError(); }
     }
     async Task ImportConfiguration()
     {

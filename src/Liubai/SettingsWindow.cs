@@ -90,7 +90,7 @@ internal sealed partial class SettingsWindow : PanelWindow
         appearance.Children.Add(resetHeight);
         appearance.Children.Add(Separator());
         appearance.Children.Add(new TextBlock { Text = "最大化／全屏外观", FontSize = 19, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
-        expandedEnabled = new ToggleSwitch { Header = "启用专用外观", OnContent = "仅最大化或全屏时启用", OffContent = "使用日常外观，全屏时隐藏" };
+        expandedEnabled = new ToggleSwitch { Header = "启用专用外观", OnContent = "仅最大化或全屏时启用", OffContent = "使用日常外观" };
         AutomationProperties.SetName(expandedEnabled, "启用最大化和全屏专用外观");
         appearance.Children.Add(expandedEnabled);
         expandedMode = Combo("外观模式", "自动黑白", "自定义底色", "跟随窗口颜色");

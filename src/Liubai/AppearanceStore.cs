@@ -3,6 +3,7 @@ using System.Text.Json;
 namespace Liubai;
 
 public enum GlassStyle { Light, Frosted, Acrylic, Custom }
+public enum BarDisplayMode { Always, AutoHide, HideWhenExpanded }
 
 public sealed record MaterialOptions(bool Thin = false, float TintOpacity = .22f,
     float LuminosityOpacity = .78f, bool FollowTheme = true, string TintHex = "#D5E9E1", bool ShowLine = false, bool NoBase = false)
@@ -38,7 +39,7 @@ public sealed record PersonalPreset(string Id, string Name, GlassStyle Style, Ma
 internal sealed record AppearanceConfiguration(GlassStyle Style = GlassStyle.Frosted, MaterialOptions? Custom = null,
     int BarHeight = AppearanceStore.DefaultHeight, ExpandedAppearanceOptions? Expanded = null,
     bool AllDisplays = true, bool FollowPaused = false, PersonalPreset[]? Presets = null, int Version = 1,
-    int ClockFontSize = AppearanceStore.DefaultClockFontSize, string[]? ToolbarOrder = null);
+    int ClockFontSize = AppearanceStore.DefaultClockFontSize, string[]? ToolbarOrder = null, BarDisplayMode DisplayMode = BarDisplayMode.Always);
 
 public sealed class AppearanceStore
 {
@@ -55,6 +56,7 @@ public sealed class AppearanceStore
     public ExpandedAppearanceOptions Expanded { get; private set; } = new();
     public bool AllDisplays { get; private set; } = true;
     public bool FollowPaused { get; private set; }
+    public BarDisplayMode DisplayMode { get; private set; }
     public IReadOnlyList<PersonalPreset> Presets { get; private set; } = Array.Empty<PersonalPreset>();
     public MaterialOptions Material => Style == GlassStyle.Custom ? Custom : MaterialOptions.ForPreset(Style);
 
@@ -79,6 +81,7 @@ public sealed class AppearanceStore
         ClockFontSize = saved.ClockFontSize;
         Expanded = saved.Expanded ?? new();
         AllDisplays = saved.AllDisplays; FollowPaused = saved.FollowPaused;
+        DisplayMode=saved.DisplayMode;
         Presets = Array.AsReadOnly(saved.Presets ?? []);
         ToolbarItems = Array.AsReadOnly(order);
         if (fontChanged) ClockFontSizeChanged?.Invoke();
@@ -96,7 +99,7 @@ public sealed class AppearanceStore
     static void Validate(AppearanceConfiguration? value)
     {
         bool valid = value != null && value.Version == 1 && Enum.IsDefined(value.Style) && (value.Custom == null || value.Custom.IsValid)
-            && value.BarHeight is >= MinimumHeight and <= MaximumHeight
+            && Enum.IsDefined(value.DisplayMode) && value.BarHeight is >= MinimumHeight and <= MaximumHeight
             && value.ClockFontSize is >= MinimumClockFontSize and <= MaximumClockFontSize
             && (value.ToolbarOrder == null || value.ToolbarOrder.Length <= 64)
             && (value.Expanded == null || value.Expanded.IsValid);
@@ -110,10 +113,11 @@ public sealed class AppearanceStore
             throw new InvalidDataException("配置格式或参数无效，当前设置未更改。");
     }
 
-    AppearanceConfiguration Snapshot() => new(Style, Custom, BarHeight, Expanded, AllDisplays, FollowPaused, Presets.ToArray(), ClockFontSize: ClockFontSize, ToolbarOrder: ToolbarItems.ToArray());
+    AppearanceConfiguration Snapshot() => new(Style, Custom, BarHeight, Expanded, AllDisplays, FollowPaused, Presets.ToArray(), ClockFontSize: ClockFontSize, ToolbarOrder: ToolbarItems.ToArray(),DisplayMode:DisplayMode);
     public void SaveToolbarOrder(IEnumerable<string> order) => Commit(Snapshot() with { ToolbarOrder = ToolbarOrder.Normalize(order) });
     public void SetAllDisplays(bool value) => AllDisplays = value;
     public void SetFollowPaused(bool value) => FollowPaused = value;
+    public void SetDisplayMode(BarDisplayMode value){if(!Enum.IsDefined(value))throw new ArgumentOutOfRangeException(nameof(value));DisplayMode=value;}
 
     public void Export(string destination) => Write(destination, Snapshot(), false);
     public void Import(string source) => Commit(Read(source));
